@@ -1,82 +1,67 @@
 # CAIPE DeepEval Evaluation
 
-This repository contains DeepEval-based evaluation pipelines for CAIPE RAG over two benchmark datasets:
+This repository contains DeepEval based evaluation pipelines for CAIPE RAG over two benchmark datasets:
 
 - EnterpriseRAG-Bench
 - HotpotQA
 
-The implementation supports controlled dataset ingestion into CAIPE, generation of evaluation-ready question and corpus files, retrieval quality checks using expected document IDs, answer generation from retrieved context, and metric evaluation with DeepEval.
+The project supports controlled document ingestion into CAIPE, evaluation question generation, retrieval checks against expected document IDs, answer generation from retrieved context, and metric scoring with DeepEval.
 
-## Evaluation Flow
+## Problem This Project Solves
 
-~~~text
-benchmark question
--> CAIPE rag-server retrieval through /v1/query
--> retrieved context passages
--> answer generation using Cisco LiteLLM
--> DeepEval judging
--> JSON and CSV result files
-~~~
+CAIPE can retrieve documents from a knowledge base through its rag-server. This repository provides a repeatable way to check whether CAIPE retrieves the expected source documents and whether answers generated from those retrieved contexts are relevant and faithful.
 
-This evaluates CAIPE retrieval behaviour and the quality of answers generated from retrieved context. It is not a full CAIPE agentic-chat evaluation.
+The current implementation evaluates CAIPE rag-server retrieval and context-grounded answer generation. Full CAIPE agentic chat evaluation is to be confirmed.
 
-## Requirements
+## Main Features
 
-- CAIPE rag-server running locally at http://localhost:9446
-- CAIPE configured with Cisco LiteLLM for embeddings and LLM calls
-- Python 3.10+
-- Dependencies from requirements.txt
-- Local CAIPE .env file available at C:\Users\liana\ai-platform-engineering\.env
+| Area | What is implemented |
+| --- | --- |
+| Dataset ingestion | Ingests bounded samples from EnterpriseRAG-Bench and HotpotQA into CAIPE. |
+| Retrieval evaluation | Compares CAIPE retrieved document IDs with expected document IDs. |
+| Answer generation | Uses an OpenAI compatible Cisco LiteLLM endpoint to answer from retrieved context. |
+| DeepEval scoring | Runs AnswerRelevancyMetric, FaithfulnessMetric, ContextualRelevancyMetric, ContextualPrecisionMetric, and ContextualRecallMetric. |
+| HotpotQA checks | Adds normalized exact match and contains reference checks for short answers. |
+| Output files | Writes JSON and CSV outputs under data and results. |
 
-The evaluation scripts read LLM settings from the CAIPE .env file by default:
-
-~~~text
-OPENAI_API_KEY=...
-OPENAI_ENDPOINT=...
-OPENAI_MODEL_NAME=...
-~~~
-
-Secrets and generated files are intentionally excluded from Git.
-
-## Project Structure
+## Repository Structure
 
 ~~~text
 caipe_deepeval_evaluation/
-+-- README.md
-+-- pyproject.toml
-+-- requirements.txt
-+-- .env.example
-+-- .gitignore
-+-- scripts/
-|   +-- ingest_enterprise.cmd
-|   +-- eval_enterprise.cmd
-|   +-- ingest_hotpotqa.cmd
-|   +-- eval_hotpotqa.cmd
-+-- src/
-    +-- deepeval_eval/
-        +-- __init__.py
-        +-- caipe.py
-        +-- config.py
-        +-- enterprise_dataset.py
-        +-- hotpotqa_dataset.py
-        +-- io_utils.py
-        +-- llm.py
-        +-- metrics.py
-        +-- enterprise_deepeval.py
-        +-- hotpotqa_deepeval.py
+|-- README.md
+|-- pyproject.toml
+|-- .env.example
+|-- .gitignore
+|-- scripts/
+|   |-- ingest_enterprise.cmd
+|   |-- eval_enterprise.cmd
+|   |-- ingest_hotpotqa.cmd
+|   |-- eval_hotpotqa.cmd
+|   |-- ingest_enterprise.sh
+|   |-- eval_enterprise.sh
+|   |-- ingest_hotpotqa.sh
+|   |-- eval_hotpotqa.sh
+|-- src/
+|   |-- deepeval_eval/
+|       |-- caipe.py
+|       |-- config.py
+|       |-- enterprise_dataset.py
+|       |-- enterprise_deepeval.py
+|       |-- hotpotqa_dataset.py
+|       |-- hotpotqa_deepeval.py
+|       |-- io_utils.py
+|       |-- llm.py
+|       |-- metrics.py
+|-- docs/
+    |-- architecture.md
+    |-- evaluation_pipeline.md
+    |-- enterprise_rag_bench.md
+    |-- hotpotqa.md
+    |-- project_structure.md
+    |-- setup_and_usage.md
 ~~~
 
-Module responsibilities:
-
-- caipe.py: CAIPE rag-server client and response parsing.
-- config.py: local paths, environment loading, and Cisco LiteLLM settings.
-- enterprise_dataset.py: EnterpriseRAG-Bench loading, sampling, and CAIPE payload conversion.
-- hotpotqa_dataset.py: HotpotQA loading, sampling, and CAIPE payload conversion.
-- io_utils.py: shared download and JSONL helpers.
-- llm.py: OpenAI-compatible Cisco LiteLLM client and DeepEval judge adapter.
-- metrics.py: retrieval checks, short-answer checks, and DeepEval metric setup.
-
-The following folders are generated locally and are not committed:
+Generated local folders are ignored by Git:
 
 ~~~text
 cache/
@@ -84,150 +69,153 @@ data/
 results/
 ~~~
 
-## EnterpriseRAG-Bench
+## Quick Start
 
-src/deepeval_eval/enterprise_deepeval.py implements ingestion and evaluation for EnterpriseRAG-Bench.
+From the repository root:
 
-Supported source types:
-
-~~~text
-confluence jira github hubspot fireflies linear google_drive gmail slack
+~~~powershell
+py -3.10 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e .
 ~~~
 
-The default ingestion command uses a bounded sample to avoid ingesting the full corpus:
+Make sure CAIPE rag-server is running at the default URL:
 
-- up to 1,000 documents per source
-- 10 selected evaluation questions
-- up to 3 questions per category
-- expected document IDs prioritised during document selection
-- batches of 50 documents per ingest request
+~~~text
+http://localhost:9446
+~~~
 
-Run ingestion from the repository root:
+Create a local .env file or use the CAIPE .env file configured in src/deepeval_eval/config.py.
+
+## Configuration
+
+The evaluation code reads model settings from environment variables or from the configured CAIPE .env file.
+
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| OPENAI_API_KEY | Yes | API key for the OpenAI compatible Cisco LiteLLM endpoint. |
+| OPENAI_ENDPOINT | Yes | Base URL for the LiteLLM endpoint. |
+| OPENAI_MODEL_NAME | Yes | Model name passed to answer generation and DeepEval judge calls. |
+
+Default paths and folders are defined in src/deepeval_eval/config.py.
+
+| Setting | Default |
+| --- | --- |
+| CAIPE rag-server URL | http://localhost:9446 |
+| Data directory | data |
+| Cache directory | cache |
+| Results directory | results |
+| Default env file | ~/ai-platform-engineering/.env |
+
+## Wrapper Scripts
+
+Windows users can run the .cmd scripts. Linux and macOS users can run the .sh scripts. Each script sets the repository root from its own location and then calls the correct Python entry point.
+
+Extra CLI options can be appended after the script name. For example, this runs only one EnterpriseRAG-Bench evaluation item:
+
+~~~powershell
+.\scripts\eval_enterprise.cmd --max-items 1
+~~~
+
+The shell scripts accept the same extra options:
+
+~~~bash
+./scripts/eval_enterprise.sh --max-items 1
+~~~
+
+## EnterpriseRAG-Bench Evaluation
+
+Run ingestion on Windows:
 
 ~~~powershell
 .\scripts\ingest_enterprise.cmd
 ~~~
 
-Run evaluation from the repository root:
+Run evaluation on Windows:
 
 ~~~powershell
 .\scripts\eval_enterprise.cmd
 ~~~
 
-Generated dataset files:
+Linux or macOS equivalents:
 
-~~~text
-data/enterprise_deepeval_corpus.jsonl
-data/enterprise_deepeval_corpus.csv
-data/enterprise_deepeval_questions.jsonl
-data/enterprise_deepeval_questions.csv
+~~~bash
+./scripts/ingest_enterprise.sh
+./scripts/eval_enterprise.sh
 ~~~
 
-Generated result files:
+Direct Python commands are also supported:
 
-~~~text
-results/enterprise_deepeval_results_timestamp.json
-results/enterprise_deepeval_results_timestamp.csv
+~~~powershell
+python src\deepeval_eval\enterprise_deepeval.py ingest --sources confluence jira github hubspot fireflies linear google_drive gmail slack --limit-per-source 1000 --num-questions 10 --questions-per-category 3 --batch-size 50
+python src\deepeval_eval\enterprise_deepeval.py eval --max-items 10 --top-k 3 --max-context-chars 6000
 ~~~
 
-## HotpotQA
+## HotpotQA Evaluation
 
-src/deepeval_eval/hotpotqa_deepeval.py implements ingestion and evaluation for HotpotQA.
-
-The HotpotQA pipeline expects preprocessed zip files:
+HotpotQA ingestion expects these preprocessed zip files in cache, with fallback lookup in ~/Downloads:
 
 ~~~text
-cache/hotpotqa_full_questions.jsonl.zip
-cache/hotpotqa_full_document_pool.jsonl.zip
+hotpotqa_full_questions.jsonl.zip
+hotpotqa_full_document_pool.jsonl.zip
 ~~~
 
-If those files are not present in cache/, the script falls back to C:\Users\liana\Downloads.
-
-The default ingestion command uses:
-
-- 100 selected questions
-- up to 1,000 documents
-- up to 50 questions per HotpotQA category
-- gold supporting documents included where possible
-- batches of 50 documents per ingest request
-
-Run ingestion from the repository root:
+Run ingestion on Windows:
 
 ~~~powershell
 .\scripts\ingest_hotpotqa.cmd
 ~~~
 
-Run evaluation from the repository root:
+Run evaluation on Windows:
 
 ~~~powershell
 .\scripts\eval_hotpotqa.cmd
 ~~~
 
-Generated dataset files:
+Linux or macOS equivalents:
 
-~~~text
-data/hotpotqa_deepeval_corpus.jsonl
-data/hotpotqa_deepeval_corpus.csv
-data/hotpotqa_deepeval_questions.jsonl
-data/hotpotqa_deepeval_questions.csv
+~~~bash
+./scripts/ingest_hotpotqa.sh
+./scripts/eval_hotpotqa.sh
 ~~~
 
-Generated result files:
-
-~~~text
-results/hotpotqa_deepeval_results_timestamp.json
-results/hotpotqa_deepeval_results_timestamp.csv
-~~~
-
-## Metrics
-
-### Retrieval Checks
-
-Both pipelines calculate retrieval checks from expected document IDs:
-
-| Metric | Meaning |
-| --- | --- |
-| doc_id_recall | Fraction of expected documents retrieved by CAIPE. |
-| doc_id_precision | Fraction of retrieved documents that are expected documents. |
-
-### DeepEval Metrics
-
-Both pipelines run:
-
-| Metric | Meaning |
-| --- | --- |
-| AnswerRelevancyMetric | Whether the generated answer addresses the question. |
-| FaithfulnessMetric | Whether the answer is grounded in the retrieved context. |
-| ContextualRelevancyMetric | Whether the retrieved context is relevant to the question. |
-| ContextualPrecisionMetric | Whether relevant retrieved context is ranked highly. |
-| ContextualRecallMetric | Whether the retrieved context covers the expected answer. |
-
-### HotpotQA Short-Answer Checks
-
-HotpotQA references are often very short, such as yes, no, or an entity name. The HotpotQA pipeline therefore also records:
-
-| Metric | Meaning |
-| --- | --- |
-| answer_exact_match | Normalised generated answer exactly matches the reference. |
-| answer_contains_reference | Normalised generated answer contains the reference answer. |
-
-## Command Reference
-
-The wrapper commands use the shared virtual environment at D:\summer project\caipe-deepeval-venv\Scripts\python.exe.
-
-Run one-item smoke tests from the repository root:
+Direct Python commands are also supported:
 
 ~~~powershell
-.\scripts\eval_enterprise.cmd --max-items 1 --top-k 3 --max-context-chars 6000
-.\scripts\eval_hotpotqa.cmd --max-items 1 --top-k 5 --max-context-chars 12000
+python src\deepeval_eval\hotpotqa_deepeval.py ingest --limit 100 --questions-per-category 50 --max-docs 1000 --batch-size 50
+python src\deepeval_eval\hotpotqa_deepeval.py eval --max-items 10 --top-k 5 --max-context-chars 12000
 ~~~
 
-## Troubleshooting
+## Outputs and Results
 
-If evaluation fails with a connection error, check that CAIPE rag-server is running at http://localhost:9446.
+Ingestion writes generated dataset files to data:
 
-If evaluation fails because a question file is missing, rerun ingestion or restore the generated files under data/.
+| Pipeline | Files |
+| --- | --- |
+| EnterpriseRAG-Bench | enterprise_deepeval_corpus.jsonl, enterprise_deepeval_corpus.csv, enterprise_deepeval_questions.jsonl, enterprise_deepeval_questions.csv |
+| HotpotQA | hotpotqa_deepeval_corpus.jsonl, hotpotqa_deepeval_corpus.csv, hotpotqa_deepeval_questions.jsonl, hotpotqa_deepeval_questions.csv |
 
-If DeepEval cannot call the judge model, check OPENAI_API_KEY, OPENAI_ENDPOINT, and OPENAI_MODEL_NAME in the CAIPE .env file.
+Evaluation writes timestamped result files to results:
 
-If ingestion is slow, reduce source limits or question limits before scaling back up.
+~~~text
+enterprise_deepeval_results_timestamp.json
+enterprise_deepeval_results_timestamp.csv
+hotpotqa_deepeval_results_timestamp.json
+hotpotqa_deepeval_results_timestamp.csv
+~~~
+
+## Documentation
+
+Detailed documentation is available in the docs folder:
+
+- [Architecture](docs/architecture.md)
+- [Evaluation Pipeline](docs/evaluation_pipeline.md)
+- [EnterpriseRAG-Bench](docs/enterprise_rag_bench.md)
+- [HotpotQA](docs/hotpotqa.md)
+- [Project Structure](docs/project_structure.md)
+- [Setup and Usage](docs/setup_and_usage.md)
+
+## Notes
+
+- Generated folders are intentionally excluded from Git.
+- Authentication token support exists through CLI options, but token retrieval is not implemented in this repository.
+- Full CAIPE agentic chat evaluation is to be confirmed.
