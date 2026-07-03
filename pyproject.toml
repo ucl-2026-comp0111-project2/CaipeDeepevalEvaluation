@@ -1,0 +1,15 @@
+[build-system]
+requires = ['setuptools>=45', 'wheel']
+build-backend = 'setuptools.build_meta'
+
+[project]
+name = 'caipe-deepeval-evaluation'
+version = '0.1.0'
+description = 'CAIPE DeepEval evaluation scripts for EnterpriseRAG-Bench and HotpotQA'
+requires-python = '>=3.10'
+dependencies = [
+  'deepeval',
+  'httpx',
+  'requests',
+  'pydantic',
+]
