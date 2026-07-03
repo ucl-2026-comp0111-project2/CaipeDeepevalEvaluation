@@ -55,9 +55,26 @@ caipe_deepeval_evaluation/
 +-- src/
     +-- deepeval_eval/
         +-- __init__.py
+        +-- caipe.py
+        +-- config.py
+        +-- enterprise_dataset.py
+        +-- hotpotqa_dataset.py
+        +-- io_utils.py
+        +-- llm.py
+        +-- metrics.py
         +-- enterprise_deepeval.py
         +-- hotpotqa_deepeval.py
 ~~~
+
+Module responsibilities:
+
+- caipe.py: CAIPE rag-server client and response parsing.
+- config.py: local paths, environment loading, and Cisco LiteLLM settings.
+- enterprise_dataset.py: EnterpriseRAG-Bench loading, sampling, and CAIPE payload conversion.
+- hotpotqa_dataset.py: HotpotQA loading, sampling, and CAIPE payload conversion.
+- io_utils.py: shared download and JSONL helpers.
+- llm.py: OpenAI-compatible Cisco LiteLLM client and DeepEval judge adapter.
+- metrics.py: retrieval checks, short-answer checks, and DeepEval metric setup.
 
 The following folders are generated locally and are not committed:
 
