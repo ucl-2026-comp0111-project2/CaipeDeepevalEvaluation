@@ -1,4 +1,4 @@
-deepeval
-httpx
-requests
-pydantic
+deepeval==4.0.7
+httpx==0.28.1
+pydantic==2.13.4
+requests==2.34.2
