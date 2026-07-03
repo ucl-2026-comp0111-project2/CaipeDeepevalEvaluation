@@ -1,11 +1,20 @@
+# Python/runtime artefacts
 __pycache__/
 *.py[cod]
-.env
 .venv/
 venv/
+
+# Local secrets and environment files
+.env
+
+# Generated benchmark artefacts
 cache/
 data/
 results/
+*.zip
+
+# Tool/test artefacts
+.deepeval/
 *.log
 .pytest_cache/
 .ruff_cache/
