@@ -10,7 +10,6 @@ from typing import Any
 
 if __package__ in (None, ''):
     sys.path.append(str(Path(__file__).resolve().parents[1]))
-
 from deepeval_eval.caipe import CaipeRagClient, extract_contexts_and_sources
 from deepeval_eval.config import (
     DEFAULT_CACHE_DIR,
@@ -35,6 +34,7 @@ from deepeval_eval.enterprise_dataset import (
 from deepeval_eval.io_utils import load_eval_questions
 from deepeval_eval.llm import DeepEvalJudge, OpenAICompatibleClient, make_generation_prompt
 from deepeval_eval.metrics import build_metrics, doc_id_scores
+from deepeval_eval.agentic_rag import AgenticRetriever
 
 
 def run_ingest(args: argparse.Namespace) -> None:
@@ -126,13 +126,30 @@ def run_eval(args: argparse.Namespace) -> None:
         question = row['user_input']
         print(f'Evaluating {idx}/{len(rows)}: {question[:90]}')
 
-        retrieved_raw = rag_client.query(question, args.datasource_id, args.top_k)
-        contexts, sources = extract_contexts_and_sources(retrieved_raw)
-        trimmed_contexts = [text[:args.max_context_chars] for text in contexts]
+        # routers for agentic evals
+        if getattr(args, 'agentic', False):
+            if not hasattr(args, '_agentic_retriever'):
+                args._agentic_retriever = AgenticRetriever(
+                    supervisor_url=getattr(args, 'supervisor_url', 'http://localhost:8000'),
+                    timeout=200.0,
+                    logdir=str(args.results_dir / 'logs'),
+                )
+            agentic_result = args._agentic_retriever.retrieve(question)
+            answer = agentic_result.answer
+            trimmed_contexts = [c[:args.max_context_chars] for c in agentic_result.contexts]
+            sources = []  # agent controls retrieval internally
+        else:
+            retrieved_raw = rag_client.query(question, args.datasource_id, args.top_k)
+            contexts, sources = extract_contexts_and_sources(retrieved_raw)
+            trimmed_contexts = [text[:args.max_context_chars] for text in contexts]
+            answer = str(llm_client.generate(make_generation_prompt(question, trimmed_contexts)))
+        # retrieved_raw = rag_client.query(question, args.datasource_id, args.top_k)
+        # contexts, sources = extract_contexts_and_sources(retrieved_raw)
+        # trimmed_contexts = [text[:args.max_context_chars] for text in contexts]
 
-        # CAIPE remains the system under test for retrieval; this answer step only
-        # converts the retrieved context into text that DeepEval can judge.
-        answer = str(llm_client.generate(make_generation_prompt(question, trimmed_contexts)))
+        # # CAIPE remains the system under test for retrieval; this answer step only
+        # # converts the retrieved context into text that DeepEval can judge.
+        # answer = str(llm_client.generate(make_generation_prompt(question, trimmed_contexts)))
         test_case = LLMTestCase(
             input=question,
             actual_output=answer,
@@ -238,6 +255,10 @@ def build_parser() -> argparse.ArgumentParser:
     eval_parser.add_argument('--llm-base-url', default=None)
     eval_parser.add_argument('--llm-api-key', default=None)
     eval_parser.add_argument('--llm-model', default=None)
+    eval_parser.add_argument("--agentic", action="store_true",
+        help="Route queries through caipe-supervisor A2A endpoint")
+    eval_parser.add_argument("--supervisor-url", default="http://localhost:8000",
+        help="CAIPE supervisor URL for agentic eval")
     eval_parser.set_defaults(func=run_eval)
 
     return parser
