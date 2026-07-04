@@ -1,11 +1,19 @@
 #!/usr/bin/env sh
 set -eu
 
-# Runs EnterpriseRAG-Bench ingestion with the repository default sample settings.
-# Extra CLI options can be appended after the script name; later options override earlier ones.
+# Run EnterpriseRAG-Bench ingestion using the repository defaults.
+# Additional CLI arguments can be passed to override the defaults.
 
 SCRIPT_DIR=$(dirname "$0")
 REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 PYTHON_BIN=${PYTHON:-python3}
 
-exec "$PYTHON_BIN" "$REPO_ROOT/src/deepeval_eval/enterprise_deepeval.py" ingest --sources confluence jira github hubspot fireflies linear google_drive gmail slack --limit-per-source 1000 --num-questions 10 --questions-per-category 3 --batch-size 50 "$@"
+exec "$PYTHON_BIN" \
+  "$REPO_ROOT/src/deepeval_eval/enterprise_deepeval.py" \
+  ingest \
+  --sources confluence jira github hubspot fireflies linear google_drive gmail slack \
+  --limit-per-source 1000 \
+  --num-questions 10 \
+  --questions-per-category 3 \
+  --batch-size 50 \
+  "$@"
