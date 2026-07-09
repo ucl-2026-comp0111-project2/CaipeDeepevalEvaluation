@@ -1,14 +1,13 @@
 """
 Agentic RAG client for DeepEval evaluation.
 
-Sends questions to the CAIPE supervisor via the A2A protocol using
-message/send (synchronous) which returns the full response in one call.
+Uses message/stream (SSE) to capture rag_context artifacts emitted
+during agent execution, alongside the final answer.
 
-Actual response structure from CAIPE supervisor (A2A protocol v0.3.0):
-  result.status.state                    → "completed" | "failed"
-  result.status.message.parts[].kind     → "text"
-  result.status.message.parts[].text     → answer text
-  result.artifacts[]                     → RAG context (if patch applied)
+SSE event structure observed from CAIPE supervisor:
+  - result.artifact.name == "rag_context"        → RAG context (in parts[].text)
+  - result.artifact.name == "final_result"        → final answer (in parts[].text)
+  - result.final == true, result.kind == "status-update" → task complete
 """
 from __future__ import annotations
 
@@ -25,8 +24,6 @@ import httpx
 logger = logging.getLogger(__name__)
 
 
-# Result model
-
 @dataclass
 class AgenticRAGResult:
     answer: str
@@ -36,16 +33,11 @@ class AgenticRAGResult:
     error: Optional[str] = None
 
 
-# Agentic retriever
-
 class AgenticRetriever:
     """
-    Sends questions to the CAIPE supervisor A2A endpoint using message/send.
-
-    Flow:
-      1. POST message/send with messageId → returns full task result synchronously
-      2. Extract answer from result.status.message.parts[].text
-      3. Extract contexts from result.artifacts named "rag_context"
+    Sends questions to the CAIPE supervisor using SSE streaming (message/stream).
+    Collects rag_context artifacts emitted during agent execution and
+    extracts the final answer from the final_result artifact.
     """
 
     def __init__(
@@ -60,11 +52,10 @@ class AgenticRetriever:
         if self.logdir:
             self.logdir.mkdir(parents=True, exist_ok=True)
 
-    def _build_request(self, question: str) -> dict:
-        """Build the A2A message/send request."""
+    def _build_stream_request(self, question: str) -> dict:
         return {
             "jsonrpc": "2.0",
-            "method": "message/send",
+            "method": "message/stream",
             "id": str(uuid.uuid4()),
             "params": {
                 "message": {
@@ -75,110 +66,93 @@ class AgenticRetriever:
             },
         }
 
-    def _extract_answer(self, result: dict) -> str:
-        """
-        Extract final answer from artifacts named 'final_result'.
-        Falls back to status.message.parts if not found.
-        """
-        try:
-            # Primary: look for final_result artifact
-            for artifact in result.get("artifacts", []):
-                if artifact.get("name") == "final_result":
-                    for part in artifact.get("parts", []):
-                        text = part.get("text", "")
-                        if text.strip():
-                            return text.strip()
-
-            # Fallback: status.message.parts
-            parts = result.get("status", {}).get("message", {}).get("parts", [])
-            texts = []
-            for part in parts:
-                if part.get("kind") == "text" and part.get("text", "").strip():
-                    texts.append(part["text"].strip())
-                elif "root" in part:
-                    root = part["root"]
-                    if root.get("text", "").strip():
-                        texts.append(root["text"].strip())
-            return "\n".join(texts)
-        except Exception as e:
-            logger.warning(f"Failed to extract answer: {e}")
-            return ""
-
-    def _extract_contexts(self, result: dict) -> list[str]:
-        """
-        Extract RAG context snippets from artifacts.
-        Looks for 'rag_search_results' artifact with data.snippets[].content
-        or 'rag_context' artifact with text parts.
-        """
-        contexts = []
-        try:
-            for artifact in result.get("artifacts", []):
-                name = artifact.get("name", "")
-                for part in artifact.get("parts", []):
-                    if name == "rag_search_results":
-                        # Structure: {"kind": "data", "data": {"snippets": [{"content": "..."}]}}
-                        data = part.get("data", {})
-                        if isinstance(data, dict):
-                            for snippet in data.get("snippets", []):
-                                content = snippet.get("content", "")
-                                if content.strip():
-                                    contexts.append(content.strip())
-                    elif name == "rag_context":
-                        # Structure: {"kind": "text", "text": "..."}
-                        text = part.get("text", "")
-                        if text.strip():
-                            contexts.append(text.strip())
-        except Exception as e:
-            logger.warning(f"Failed to extract contexts: {e}")
-        return contexts
+    def _extract_text_from_parts(self, artifact: dict) -> str:
+        """Extract text from artifact parts or direct text field."""
+        # New format: parts[].text
+        for part in artifact.get("parts", []):
+            text = part.get("text", "")
+            if text.strip():
+                return text.strip()
+        # Old format: direct text field
+        return artifact.get("text", "").strip()
 
     def retrieve(self, question: str) -> AgenticRAGResult:
         """
-        Send a question to the CAIPE supervisor and return the answer + contexts.
+        Send a question via SSE streaming, collect rag_context artifacts,
+        and return the final answer + contexts.
         """
+        task_id = str(uuid.uuid4())
         start = time.perf_counter()
-        request_body = self._build_request(question)
+        request_body = self._build_stream_request(question)
+
+        contexts: list[str] = []
+        answer = ""
+        raw_events: list[dict] = []
 
         try:
-            resp = httpx.post(
+            with httpx.stream(
+                "POST",
                 self.supervisor_url,
                 json=request_body,
                 timeout=self.timeout,
                 headers={"Content-Type": "application/json"},
-            )
+            ) as resp:
+                resp.raise_for_status()
+
+                for chunk in resp.iter_text():
+                    # Each chunk may contain multiple SSE lines
+                    for line in chunk.split("\n"):
+                        line = line.strip()
+                        if not line or not line.startswith("data:"):
+                            continue
+                        data = line[5:].strip()
+                        if not data:
+                            continue
+                        try:
+                            event = json.loads(data)
+                        except json.JSONDecodeError:
+                            continue
+
+                        raw_events.append(event)
+                        result = event.get("result", {})
+                        artifact = result.get("artifact", {})
+                        artifact_name = artifact.get("name", "")
+
+                        # Collect rag_context — content in parts[].text
+                        if artifact_name == "rag_context":
+                            text = self._extract_text_from_parts(artifact)
+                            if text:
+                                contexts.append(text)
+                                logger.debug(f"Captured rag_context: {len(text)} chars")
+
+                        # Extract answer from final_result artifact
+                        elif artifact_name == "final_result":
+                            text = self._extract_text_from_parts(artifact)
+                            if text:
+                                answer = text
+
+                        # Detect task completion
+                        if result.get("final") and result.get("kind") == "status-update":
+                            task_id = result.get("taskId", task_id)
+                            state = result.get("status", {}).get("state", "")
+                            logger.info(f"Task {task_id} completed with state={state}")
+
             latency_ms = (time.perf_counter() - start) * 1000
-            resp.raise_for_status()
 
-            response = resp.json()
-            result = response.get("result", {})
-            task_id = result.get("id", str(uuid.uuid4()))
-            state = result.get("status", {}).get("state", "")
-
-            # Log raw response
+            # Log raw events for debugging
             if self.logdir:
                 log_path = self.logdir / f"{task_id}.json"
                 with open(log_path, "w") as f:
-                    json.dump(result, f, indent=2)
-
-            if state == "failed":
-                error_parts = result.get("status", {}).get("message", {}).get("parts", [])
-                error_msg = " ".join(p.get("text", "") for p in error_parts)
-                return AgenticRAGResult(
-                    answer="", contexts=[], latency_ms=latency_ms,
-                    task_id=task_id, error=error_msg
-                )
-
-            answer = self._extract_answer(result)
-            contexts = self._extract_contexts(result)
+                    json.dump(raw_events, f, indent=2)
 
             if not contexts:
                 logger.warning(
-                    f"No RAG context found for task {task_id}. "
+                    f"No rag_context artifacts for task {task_id}. "
                     "Agent may have answered from training knowledge without RAG lookup."
                 )
 
             logger.info(
-                f"[{task_id}] state={state} answer_len={len(answer)} "
+                f"[{task_id}] answer_len={len(answer)} "
                 f"contexts={len(contexts)} latency={latency_ms:.0f}ms"
             )
 
@@ -191,8 +165,11 @@ class AgenticRetriever:
 
         except Exception as e:
             latency_ms = (time.perf_counter() - start) * 1000
-            logger.error(f"A2A request failed: {e}")
+            logger.error(f"A2A stream request failed: {e}")
             return AgenticRAGResult(
-                answer="", contexts=[], latency_ms=latency_ms,
-                task_id="", error=str(e),
+                answer="",
+                contexts=[],
+                latency_ms=latency_ms,
+                task_id=task_id,
+                error=str(e),
             )
