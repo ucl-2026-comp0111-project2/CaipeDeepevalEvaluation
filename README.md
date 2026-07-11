@@ -21,6 +21,7 @@ The current implementation evaluates CAIPE rag-server retrieval and context-grou
 | Retrieval evaluation | Compares CAIPE retrieved document IDs with expected document IDs. |
 | Answer generation | Uses an OpenAI compatible Cisco LiteLLM endpoint to answer from retrieved context. |
 | DeepEval scoring | Runs AnswerRelevancyMetric, FaithfulnessMetric, ContextualRelevancyMetric, ContextualPrecisionMetric, and ContextualRecallMetric. |
+| Ground-truth benchmark evaluation | Runs DeepEval against benchmark reference contexts and reference answers without calling CAIPE retrieval. |
 | HotpotQA checks | Adds normalized exact match and contains reference checks for short answers. |
 | Output files | Writes JSON and CSV outputs under data and results. |
 
@@ -37,10 +38,12 @@ caipe_deepeval_evaluation/
 |   |-- eval_enterprise.cmd
 |   |-- ingest_hotpotqa.cmd
 |   |-- eval_hotpotqa.cmd
+|   |-- eval_precomputed.cmd
 |   |-- ingest_enterprise.sh
 |   |-- eval_enterprise.sh
 |   |-- ingest_hotpotqa.sh
 |   |-- eval_hotpotqa.sh
+|   |-- eval_precomputed.sh
 |-- src/
 |   |-- deepeval_eval/
 |       |-- caipe.py
@@ -49,6 +52,7 @@ caipe_deepeval_evaluation/
 |       |-- enterprise_deepeval.py
 |       |-- hotpotqa_dataset.py
 |       |-- hotpotqa_deepeval.py
+|       |-- precomputed_deepeval.py
 |       |-- io_utils.py
 |       |-- llm.py
 |       |-- metrics.py
@@ -120,6 +124,40 @@ The shell scripts accept the same extra options:
 
 ~~~bash
 ./scripts/eval_enterprise.sh --max-items 1
+~~~
+
+## Ground-Truth / Precomputed DeepEval Evaluation
+
+The precomputed evaluation mode tests DeepEval against a benchmark's ground-truth
+question file instead of querying CAIPE retrieval. It uses the `context` field in
+the generated question JSONL as the retrieval context. By default it uses the
+benchmark `reference` answer as `actual_output`, which gives an upper-bound style
+run for checking the metric behaviour against the reference solution.
+
+Run the default HotpotQA ground-truth evaluation on Windows:
+
+~~~powershell
+.\scripts\eval_precomputed.cmd
+~~~
+
+Run it for EnterpriseRAG-Bench:
+
+~~~powershell
+.\scripts\eval_precomputed.cmd --benchmark enterprise --questions-file data\enterprise_deepeval_questions.jsonl
+~~~
+
+To ask the configured LLM to answer from the gold context instead of using the
+reference answer directly:
+
+~~~powershell
+.\scripts\eval_precomputed.cmd --answer-mode generate
+~~~
+
+The output files are written to `results/` with names like:
+
+~~~text
+precomputed_deepeval_hotpotqa_reference_timestamp.json
+precomputed_deepeval_hotpotqa_reference_timestamp.csv
 ~~~
 
 ## EnterpriseRAG-Bench Evaluation
@@ -201,6 +239,8 @@ enterprise_deepeval_results_timestamp.json
 enterprise_deepeval_results_timestamp.csv
 hotpotqa_deepeval_results_timestamp.json
 hotpotqa_deepeval_results_timestamp.csv
+precomputed_deepeval_benchmark_answer-mode_timestamp.json
+precomputed_deepeval_benchmark_answer-mode_timestamp.csv
 ~~~
 
 ## Documentation
