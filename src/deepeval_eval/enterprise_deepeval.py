@@ -185,6 +185,10 @@ def run_eval(args: argparse.Namespace) -> None:
             'doc_id_recall': doc_recall,
             'doc_id_precision': doc_precision,
             'metrics': metric_results,
+            'input_tokens': agentic_result.input_tokens,
+            'output_tokens': agentic_result.output_tokens,
+            'total_tokens': agentic_result.total_tokens,
+            'latency_ms': agentic_result.latency_ms,
         })
 
     write_results(args.results_dir, results)

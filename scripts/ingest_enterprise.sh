@@ -13,7 +13,7 @@ exec "$PYTHON_BIN" \
   ingest \
   --sources confluence jira github hubspot fireflies linear google_drive gmail slack \
   --limit-per-source 1000 \
-  --num-questions 10 \
-  --questions-per-category 3 \
+  --num-questions 100 \
+  --questions-per-category 10 \
   --batch-size 50 \
   "$@"

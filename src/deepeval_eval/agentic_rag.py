@@ -2,12 +2,12 @@
 Agentic RAG client for DeepEval evaluation.
 
 Uses message/stream (SSE) to capture rag_context artifacts emitted
-during agent execution, alongside the final answer.
+during agent execution, alongside the final answer and token usage.
 
 SSE event structure observed from CAIPE supervisor:
   - result.artifact.name == "rag_context"        → RAG context (in parts[].text)
   - result.artifact.name == "final_result"        → final answer (in parts[].text)
-  - result.final == true, result.kind == "status-update" → task complete
+  - result.final == true, result.kind == "status-update" → task complete + usage_metadata
 """
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ import json
 import logging
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
@@ -30,14 +30,17 @@ class AgenticRAGResult:
     contexts: list[str]
     latency_ms: float
     task_id: str
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
     error: Optional[str] = None
 
 
 class AgenticRetriever:
     """
     Sends questions to the CAIPE supervisor using SSE streaming (message/stream).
-    Collects rag_context artifacts emitted during agent execution and
-    extracts the final answer from the final_result artifact.
+    Collects rag_context artifacts emitted during agent execution,
+    extracts the final answer, and tracks token usage from usage_metadata.
     """
 
     def __init__(
@@ -68,18 +71,16 @@ class AgenticRetriever:
 
     def _extract_text_from_parts(self, artifact: dict) -> str:
         """Extract text from artifact parts or direct text field."""
-        # New format: parts[].text
         for part in artifact.get("parts", []):
             text = part.get("text", "")
             if text.strip():
                 return text.strip()
-        # Old format: direct text field
         return artifact.get("text", "").strip()
 
     def retrieve(self, question: str) -> AgenticRAGResult:
         """
         Send a question via SSE streaming, collect rag_context artifacts,
-        and return the final answer + contexts.
+        extract the final answer, and capture token usage metrics.
         """
         task_id = str(uuid.uuid4())
         start = time.perf_counter()
@@ -87,6 +88,9 @@ class AgenticRetriever:
 
         contexts: list[str] = []
         answer = ""
+        input_tokens = 0
+        output_tokens = 0
+        total_tokens = 0
         raw_events: list[dict] = []
 
         try:
@@ -100,7 +104,6 @@ class AgenticRetriever:
                 resp.raise_for_status()
 
                 for chunk in resp.iter_text():
-                    # Each chunk may contain multiple SSE lines
                     for line in chunk.split("\n"):
                         line = line.strip()
                         if not line or not line.startswith("data:"):
@@ -131,11 +134,18 @@ class AgenticRetriever:
                             if text:
                                 answer = text
 
-                        # Detect task completion
+                        # Detect task completion and extract token usage
                         if result.get("final") and result.get("kind") == "status-update":
                             task_id = result.get("taskId", task_id)
                             state = result.get("status", {}).get("state", "")
-                            logger.info(f"Task {task_id} completed with state={state}")
+                            usage = result.get("metadata", {}).get("usage_metadata", {})
+                            input_tokens = usage.get("input_tokens", 0)
+                            output_tokens = usage.get("output_tokens", 0)
+                            total_tokens = usage.get("total_tokens", 0)
+                            logger.info(
+                                f"Task {task_id} completed state={state} "
+                                f"tokens={total_tokens} (in={input_tokens} out={output_tokens})"
+                            )
 
             latency_ms = (time.perf_counter() - start) * 1000
 
@@ -152,8 +162,8 @@ class AgenticRetriever:
                 )
 
             logger.info(
-                f"[{task_id}] answer_len={len(answer)} "
-                f"contexts={len(contexts)} latency={latency_ms:.0f}ms"
+                f"[{task_id}] answer_len={len(answer)} contexts={len(contexts)} "
+                f"latency={latency_ms:.0f}ms tokens={total_tokens}"
             )
 
             return AgenticRAGResult(
@@ -161,6 +171,9 @@ class AgenticRetriever:
                 contexts=contexts,
                 latency_ms=latency_ms,
                 task_id=task_id,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                total_tokens=total_tokens,
             )
 
         except Exception as e:
