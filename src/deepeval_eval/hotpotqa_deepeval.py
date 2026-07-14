@@ -147,6 +147,15 @@ def run_eval(args: argparse.Namespace) -> None:
             answer = agentic_result.answer
             trimmed_contexts = [c[:args.max_context_chars] for c in agentic_result.contexts]
             sources = []
+            for c_idx in range(len(agentic_result.contexts)):
+                doc_id = None
+                if c_idx < len(args._agentic_retriever.documents_metadata):
+                    doc_id = args._agentic_retriever.documents_metadata[c_idx].get("doc_id")
+                if not doc_id:
+                    doc_id = c_idx
+                sources.append({
+                    "document_id": doc_id,
+                })
         else:
             retrieved_raw = rag_client.query(question, args.datasource_id, args.top_k)
             contexts, sources = extract_contexts_and_sources(retrieved_raw)

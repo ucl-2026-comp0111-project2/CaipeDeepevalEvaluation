@@ -171,9 +171,12 @@ def _parse_rag_context_artifact(text: Any) -> list:
             doc = item.get("document", {}) if isinstance(item, dict) else {}
             txt = doc.get("page_content")
             if txt:
+                doc_meta = doc.get("metadata") if isinstance(doc.get("metadata"), dict) else {}
                 doc_id = (
                     doc.get("document_id")
                     or doc.get("doc_id")
+                    or doc_meta.get("document_id")
+                    or doc_meta.get("doc_id")
                     or item.get("document_id")
                     or item.get("doc_id")
                 )
