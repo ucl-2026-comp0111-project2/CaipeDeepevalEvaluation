@@ -136,7 +136,7 @@ def run_eval(args: argparse.Namespace) -> None:
                     timeout=200.0,
                     logdir=str(args.results_dir / 'logs'),
                 )
-            agentic_result = args._agentic_retriever.retrieve(question)
+            agentic_result = args._agentic_retriever.retrieve(question, k=args.top_k)
             answer = agentic_result.answer
             trimmed_contexts = [c[:args.max_context_chars] for c in agentic_result.contexts]
             sources = []  # agent controls retrieval internally
