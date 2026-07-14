@@ -123,7 +123,7 @@ def run_eval(args: argparse.Namespace) -> None:
 
     from deepeval.test_case import LLMTestCase
 
-    rows = load_eval_questions(args.questions_file, args.max_items)
+    rows = load_eval_questions(args.questions_file, args.max_items, getattr(args, 'limit_per_category', None))
     results: list[dict[str, Any]] = []
 
     for idx, row in enumerate(rows, start=1):
@@ -273,6 +273,7 @@ def build_parser() -> argparse.ArgumentParser:
     eval_parser.add_argument('--datasource-id', default='hotpotqa_deepeval')
     eval_parser.add_argument('--questions-file', type=Path, default=DEFAULT_DATA_DIR / 'hotpotqa_deepeval_questions.jsonl')
     eval_parser.add_argument('--max-items', type=int, default=10)
+    eval_parser.add_argument('--limit-per-category', type=int, default=None)
     eval_parser.add_argument('--top-k', type=int, default=5)
     eval_parser.add_argument('--max-context-chars', type=int, default=12000)
     eval_parser.add_argument('--llm-base-url', default=None)
