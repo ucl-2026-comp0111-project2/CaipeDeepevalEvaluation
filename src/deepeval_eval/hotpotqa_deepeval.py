@@ -131,6 +131,9 @@ def run_eval(args: argparse.Namespace) -> None:
         reference = row.get('reference') or ''
         print(f'Evaluating {idx}/{len(rows)}: {question[:90]}')
 
+        # Reset tokens tracking on the judge client before each question evaluation
+        llm_client.reset_tokens()
+
         agentic_result = None
 
         if getattr(args, 'agentic', False):
@@ -196,6 +199,9 @@ def run_eval(args: argparse.Namespace) -> None:
             'input_tokens': agentic_result.input_tokens if agentic_result else 0,
             'output_tokens': agentic_result.output_tokens if agentic_result else 0,
             'total_tokens': agentic_result.total_tokens if agentic_result else 0,
+            'evaluator_input_tokens': llm_client.input_tokens,
+            'evaluator_output_tokens': llm_client.output_tokens,
+            'evaluator_total_tokens': llm_client.total_tokens,
             'latency_ms': agentic_result.latency_ms if agentic_result else 0,
         })
 

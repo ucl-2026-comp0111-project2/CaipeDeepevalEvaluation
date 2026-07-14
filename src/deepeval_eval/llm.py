@@ -14,6 +14,14 @@ class OpenAICompatibleClient:
         self.model = model
         self.api_key = api_key
         self.base_url = base_url.rstrip('/')
+        self.input_tokens = 0
+        self.output_tokens = 0
+        self.total_tokens = 0
+
+    def reset_tokens(self) -> None:
+        self.input_tokens = 0
+        self.output_tokens = 0
+        self.total_tokens = 0
 
     def generate(self, prompt: str, schema: type[BaseModel] | None = None) -> str | BaseModel:
         if schema is not None:
@@ -23,7 +31,13 @@ class OpenAICompatibleClient:
         with httpx.Client(timeout=300.0) as client:
             response = client.post(f'{self.base_url}/chat/completions', headers=headers, json=payload)
             response.raise_for_status()
-            text = response.json()['choices'][0]['message']['content'] or ''
+            resp_json = response.json()
+            usage = resp_json.get('usage')
+            if isinstance(usage, dict):
+                self.input_tokens += usage.get('prompt_tokens', 0)
+                self.output_tokens += usage.get('completion_tokens', 0)
+                self.total_tokens += usage.get('total_tokens', 0)
+            text = resp_json['choices'][0]['message']['content'] or ''
         if schema is None:
             return text.strip()
         return parse_schema_response(text, schema)
