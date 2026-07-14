@@ -287,7 +287,7 @@ def build_parser() -> argparse.ArgumentParser:
     eval_parser = subparsers.add_parser('eval')
     eval_parser.add_argument('--datasource-id', default='hotpotqa_deepeval')
     eval_parser.add_argument('--questions-file', type=Path, default=DEFAULT_DATA_DIR / 'hotpotqa_deepeval_questions.jsonl')
-    eval_parser.add_argument('--max-items', type=int, default=10)
+    eval_parser.add_argument('--max-items', type=int, default=None)
     eval_parser.add_argument('--limit-per-category', type=int, default=None)
     eval_parser.add_argument('--top-k', type=int, default=5)
     eval_parser.add_argument('--max-context-chars', type=int, default=12000)
