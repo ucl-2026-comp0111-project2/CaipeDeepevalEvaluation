@@ -126,6 +126,8 @@ def run_eval(args: argparse.Namespace) -> None:
         question = row['user_input']
         print(f'Evaluating {idx}/{len(rows)}: {question[:90]}')
 
+        agentic_result = None
+
         # routers for agentic evals
         if getattr(args, 'agentic', False):
             if not hasattr(args, '_agentic_retriever'):
@@ -185,10 +187,10 @@ def run_eval(args: argparse.Namespace) -> None:
             'doc_id_recall': doc_recall,
             'doc_id_precision': doc_precision,
             'metrics': metric_results,
-            'input_tokens': agentic_result.input_tokens,
-            'output_tokens': agentic_result.output_tokens,
-            'total_tokens': agentic_result.total_tokens,
-            'latency_ms': agentic_result.latency_ms,
+            'input_tokens': agentic_result.input_tokens if agentic_result else 0,
+            'output_tokens': agentic_result.output_tokens if agentic_result else 0,
+            'total_tokens': agentic_result.total_tokens if agentic_result else 0,
+            'latency_ms': agentic_result.latency_ms if agentic_result else 0,
         })
 
     write_results(args.results_dir, results)
