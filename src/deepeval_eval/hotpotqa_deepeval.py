@@ -7,7 +7,7 @@ import sys
 import time
 from pathlib import Path
 from typing import Any
-
+from deepeval_eval.agentic_rag import AgenticRetriever
 if __package__ in (None, ''):
     sys.path.append(str(Path(__file__).resolve().parents[1]))
 
@@ -131,11 +131,30 @@ def run_eval(args: argparse.Namespace) -> None:
         reference = row.get('reference') or ''
         print(f'Evaluating {idx}/{len(rows)}: {question[:90]}')
 
-        retrieved_raw = rag_client.query(question, args.datasource_id, args.top_k)
-        contexts, sources = extract_contexts_and_sources(retrieved_raw)
-        trimmed_contexts = [text[:args.max_context_chars] for text in contexts]
+        agentic_result = None
 
-        answer = str(llm_client.generate(make_short_answer_prompt(question, trimmed_contexts)))
+        if getattr(args, 'agentic', False):
+            if not hasattr(args, '_agentic_retriever'):
+                args._agentic_retriever = AgenticRetriever(
+                    supervisor_url=getattr(args, 'supervisor_url', 'http://localhost:8000'),
+                    timeout=200.0,
+                    logdir=str(args.results_dir / 'logs'),
+                )
+            agentic_result = args._agentic_retriever.retrieve(question)
+            answer = agentic_result.answer
+            trimmed_contexts = [c[:args.max_context_chars] for c in agentic_result.contexts]
+            sources = []
+        else:
+            retrieved_raw = rag_client.query(question, args.datasource_id, args.top_k)
+            contexts, sources = extract_contexts_and_sources(retrieved_raw)
+            trimmed_contexts = [c[:args.max_context_chars] for c in contexts]
+            answer = str(llm_client.generate(make_short_answer_prompt(question, trimmed_contexts)))
+
+        # retrieved_raw = rag_client.query(question, args.datasource_id, args.top_k)
+        # contexts, sources = extract_contexts_and_sources(retrieved_raw)
+        # trimmed_contexts = [text[:args.max_context_chars] for text in contexts]
+
+        # answer = str(llm_client.generate(make_short_answer_prompt(question, trimmed_contexts)))
         test_case = LLMTestCase(
             input=question,
             actual_output=answer,
@@ -174,6 +193,10 @@ def run_eval(args: argparse.Namespace) -> None:
             'answer_exact_match': exact_match,
             'answer_contains_reference': contains_reference,
             'metrics': metric_results,
+            'input_tokens': agentic_result.input_tokens if agentic_result else 0,
+            'output_tokens': agentic_result.output_tokens if agentic_result else 0,
+            'total_tokens': agentic_result.total_tokens if agentic_result else 0,
+            'latency_ms': agentic_result.latency_ms if agentic_result else 0,
         })
 
     write_results(args.results_dir, results)
@@ -227,6 +250,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument('--data-dir', type=Path, default=DEFAULT_DATA_DIR)
     parser.add_argument('--cache-dir', type=Path, default=DEFAULT_CACHE_DIR)
     parser.add_argument('--results-dir', type=Path, default=DEFAULT_RESULTS_DIR)
+    
 
     subparsers = parser.add_subparsers(dest='command', required=True)
 
@@ -254,6 +278,10 @@ def build_parser() -> argparse.ArgumentParser:
     eval_parser.add_argument('--llm-base-url', default=None)
     eval_parser.add_argument('--llm-api-key', default=None)
     eval_parser.add_argument('--llm-model', default=None)
+    eval_parser.add_argument('--agentic', action='store_true',
+                         help='Route queries through caipe-supervisor A2A endpoint')
+    eval_parser.add_argument('--supervisor-url', default='http://localhost:8000',
+                            help='CAIPE supervisor URL for agentic eval')
     eval_parser.set_defaults(func=run_eval)
 
     return parser
