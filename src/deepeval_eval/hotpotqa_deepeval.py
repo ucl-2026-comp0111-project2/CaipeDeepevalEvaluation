@@ -123,7 +123,12 @@ def run_eval(args: argparse.Namespace) -> None:
 
     from deepeval.test_case import LLMTestCase
 
-    rows = load_eval_questions(args.questions_file, args.max_items, getattr(args, 'limit_per_category', None))
+    rows = load_eval_questions(
+        args.questions_file,
+        args.max_items,
+        getattr(args, 'limit_per_category', None),
+        combine_with_level=True,
+    )
     results: list[dict[str, Any]] = []
 
     for idx, row in enumerate(rows, start=1):

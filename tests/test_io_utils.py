@@ -55,3 +55,27 @@ def test_load_eval_questions_missing_category(tmp_path: Path):
     rows = load_eval_questions(questions_file, max_items=None, limit_per_category=1)
     assert len(rows) == 1
     assert rows[0]["user_input"] == "q1"
+
+
+def test_load_eval_questions_combine_with_level(tmp_path: Path):
+    questions_file = tmp_path / "questions_level.jsonl"
+    data = [
+        {"user_input": "q1", "category": "cat1", "level": "easy"},
+        {"user_input": "q2", "category": "cat1", "level": "easy"},
+        {"user_input": "q3", "category": "cat1", "level": "hard"},
+        {"user_input": "q4", "category": "cat1", "level": "hard"},
+    ]
+    with open(questions_file, "w", encoding="utf-8") as f:
+        for item in data:
+            f.write(json.dumps(item) + "\n")
+
+    # With combine_with_level=False, we only get q1 (limit_per_category=1)
+    rows_default = load_eval_questions(questions_file, max_items=None, limit_per_category=1, combine_with_level=False)
+    assert len(rows_default) == 1
+    assert rows_default[0]["user_input"] == "q1"
+
+    # With combine_with_level=True, we get q1 (easy) and q3 (hard)
+    rows_combined = load_eval_questions(questions_file, max_items=None, limit_per_category=1, combine_with_level=True)
+    assert len(rows_combined) == 2
+    assert [r["user_input"] for r in rows_combined] == ["q1", "q3"]
+

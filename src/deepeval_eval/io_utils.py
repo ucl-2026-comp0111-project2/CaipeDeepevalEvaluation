@@ -26,9 +26,14 @@ def download_bytes(url: str, cache_path: Path, timeout: int = 180) -> bytes:
 
 # Evaluation uses generated JSONL question files so ingestion and scoring stay
 # connected to the same sampled corpus.
-def load_eval_questions(path: Path, max_items: int | None, limit_per_category: int | None = None) -> list[dict]:
+def load_eval_questions(
+    path: Path,
+    max_items: int | None,
+    limit_per_category: int | None = None,
+    combine_with_level: bool = False,
+) -> list[dict]:
     rows: list[dict] = []
-    category_counts: dict[str, int] = {}
+    category_counts: dict[tuple[str, str | None] | str, int] = {}
     with path.open('r', encoding='utf-8') as f:
         for line in f:
             if not line.strip():
@@ -36,12 +41,14 @@ def load_eval_questions(path: Path, max_items: int | None, limit_per_category: i
             item = json.loads(line)
             cat = item.get('category', 'basic') or 'basic'
             if limit_per_category is not None:
-                count = category_counts.get(cat, 0)
+                key = (cat, item.get('level')) if combine_with_level else cat
+                count = category_counts.get(key, 0)
                 if count >= limit_per_category:
                     continue
-                category_counts[cat] = count + 1
+                category_counts[key] = count + 1
             rows.append(item)
             if max_items and len(rows) >= max_items:
                 break
     return rows
+
 
