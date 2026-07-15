@@ -24,6 +24,8 @@ import logging
 import re
 import uuid
 import time
+import base64
+import subprocess
 from datetime import datetime
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
@@ -335,6 +337,57 @@ class AgenticRetriever(BaseRetriever):
             logger.exception("Unexpected error calling caipe-supervisor A2A endpoint")
             return None
 
+    def _get_oidc_token(self) -> Optional[str]:
+        """Fetch OIDC token dynamically using client credentials, falling back to environment variables."""
+        client_id = os.getenv("CAIPE_CLIENT_ID") or os.getenv("CLIENT_ID")
+        client_secret = os.getenv("CAIPE_CLIENT_SECRET") or os.getenv("CLIENT_SECRET")
+
+        if not client_id or not client_secret:
+            logger.info("Credentials not in environment. Attempting to fetch from Kubernetes secret 'caipe-ui-secret'...")
+            try:
+                client_id_cmd = "kubectl get secret caipe-ui-secret -n caipe -o jsonpath='{.data.OIDC_CLIENT_ID}'"
+                client_secret_cmd = "kubectl get secret caipe-ui-secret -n caipe -o jsonpath='{.data.OIDC_CLIENT_SECRET}'"
+                client_id_b64 = subprocess.check_output(client_id_cmd, shell=True, stderr=subprocess.DEVNULL).decode().strip()
+                client_secret_b64 = subprocess.check_output(client_secret_cmd, shell=True, stderr=subprocess.DEVNULL).decode().strip()
+                if client_id_b64 and client_secret_b64:
+                    client_id = base64.b64decode(client_id_b64).decode()
+                    client_secret = base64.b64decode(client_secret_b64).decode()
+                    os.environ["CAIPE_CLIENT_ID"] = client_id
+                    os.environ["CAIPE_CLIENT_SECRET"] = client_secret
+                    logger.info("Successfully fetched OIDC credentials from Kubernetes.")
+            except Exception as e:
+                logger.debug("Could not fetch credentials from Kubernetes: %s", e)
+
+        if client_id and client_secret:
+            try:
+                keycloak_url = os.getenv("CAIPE_OIDC_TOKEN_URL") or os.getenv("CAIPE_KEYCLOAK_URL")
+                if not keycloak_url:
+                    if "caipe.homelab" in self.agent_api_url:
+                        keycloak_url = "https://keycloak.caipe.homelab/realms/caipe/protocol/openid-connect/token"
+                    else:
+                        keycloak_url = "http://localhost:7080/realms/caipe/protocol/openid-connect/token"
+
+                logger.info("Fetching a fresh OIDC token from Keycloak: %s", keycloak_url)
+                resp = httpx.post(
+                    keycloak_url,
+                    data={
+                        "client_id": client_id,
+                        "client_secret": client_secret,
+                        "grant_type": "client_credentials",
+                    },
+                    verify=not self.insecure,
+                    timeout=15.0,
+                )
+                resp.raise_for_status()
+                token = resp.json().get("access_token")
+                if token:
+                    os.environ["CAIPE_OIDC_TOKEN"] = token
+                    return token
+            except Exception as e:
+                logger.error("Failed to fetch fresh OIDC token from Keycloak: %s", e)
+
+        return os.getenv("CAIPE_OIDC_TOKEN") or os.getenv("BEARER_TOKEN")
+
     def _query_gateway(
         self,
         question: str,
@@ -343,7 +396,7 @@ class AgenticRetriever(BaseRetriever):
         trace_log: Optional[bool] = None,
     ) -> List[tuple]:
         """Send query to the streaming BFF gateway endpoints."""
-        token = os.getenv("CAIPE_OIDC_TOKEN") or os.getenv("BEARER_TOKEN")
+        token = self._get_oidc_token()
         headers = {"Content-Type": "application/json"}
         if token:
             headers["Authorization"] = f"Bearer {token}"
@@ -367,6 +420,21 @@ class AgenticRetriever(BaseRetriever):
                 verify=not self.insecure,
                 timeout=self.timeout,
             )
+            if r_conv.status_code == 401:
+                logger.warning("Gateway returned 401 Unauthorized. Attempting token refresh...")
+                if os.getenv("CAIPE_OIDC_TOKEN"):
+                    del os.environ["CAIPE_OIDC_TOKEN"]
+                token = self._get_oidc_token()
+                if token:
+                    headers["Authorization"] = f"Bearer {token}"
+                    logger.info("Retrying conversation session creation with fresh token...")
+                    r_conv = httpx.post(
+                        conv_url,
+                        json=conv_payload,
+                        headers=headers,
+                        verify=not self.insecure,
+                        timeout=self.timeout,
+                    )
             r_conv.raise_for_status()
             conv_data = r_conv.json()
             conversation_id = conv_data["data"]["conversation"]["_id"]

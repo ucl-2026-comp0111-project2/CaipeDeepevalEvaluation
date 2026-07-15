@@ -133,11 +133,12 @@ def test_agentic_retriever_init_positive():
 
 def test_agentic_retriever_init_negative():
     # Negative: Default config fallback
-    ret = AgenticRetriever()
-    assert ret.agent_api_url is not None
-    assert ret.timeout == 120.0
-    assert ret.insecure is False
-    assert ret.use_a2a is False  # Default to False (gateway API)
+    with mock.patch.dict(os.environ, {"INSECURE_SSL": "false", "CAIPE_USE_A2A": "false"}):
+        ret = AgenticRetriever()
+        assert ret.agent_api_url is not None
+        assert ret.timeout == 120.0
+        assert ret.insecure is False
+        assert ret.use_a2a is False  # Default to False (gateway API)
 
     # Env var override
     with mock.patch.dict(os.environ, {"CAIPE_USE_A2A": "true"}):
