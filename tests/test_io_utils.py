@@ -79,3 +79,63 @@ def test_load_eval_questions_combine_with_level(tmp_path: Path):
     assert len(rows_combined) == 2
     assert [r["user_input"] for r in rows_combined] == ["q1", "q3"]
 
+
+def test_parse_indices():
+    from deepeval_eval.enterprise_deepeval import parse_indices
+    # Basic list
+    assert parse_indices("1,2,5", 10) == {1, 2, 5}
+    # Ranges
+    assert parse_indices("1-3,5-7", 10) == {1, 2, 3, 5, 6, 7}
+    # Out of range values ignored
+    assert parse_indices("1,12", 10) == {1}
+    # Handles invalid formatting gracefully
+    assert parse_indices("abc,2-xyz,5", 10) == {5}
+
+
+def test_question_filtering_logic(tmp_path: Path):
+    from deepeval_eval.enterprise_deepeval import parse_indices
+    questions_file = tmp_path / "filter_questions.jsonl"
+    data = [
+        {"question_id": "q_1", "user_input": "query 1", "category": "cat1"},
+        {"question_id": "q_2", "user_input": "query 2", "category": "cat1"},
+        {"question_id": "q_3", "user_input": "query 3", "category": "cat2"},
+        {"question_id": "q_4", "user_input": "query 4", "category": "cat2"},
+    ]
+    with open(questions_file, "w", encoding="utf-8") as f:
+        for item in data:
+            f.write(json.dumps(item) + "\n")
+
+    # Mock arguments
+    class MockArgs:
+        def __init__(self, q_ids=None, q_indices=None, limit_cat=None, max_it=None):
+            self.questions_file = questions_file
+            self.question_ids = q_ids
+            self.question_indices = q_indices
+            self.limit_per_category = limit_cat
+            self.max_items = max_it
+
+    # Case A: Filter by question_ids -> should bypass limit_per_category
+    args_a = MockArgs(q_ids="q_2,q_4", limit_cat=1)
+    if args_a.question_ids:
+        rows = load_eval_questions(args_a.questions_file, None, None)
+        target_ids = {qid.strip() for qid in args_a.question_ids.split(',')}
+        rows = [row for row in rows if str(row.get('question_id')) in target_ids]
+    assert len(rows) == 2
+    assert {r["question_id"] for r in rows} == {"q_2", "q_4"}
+
+    # Case B: Filter by question_indices -> should respect limit_per_category
+    args_b = MockArgs(q_indices="2", limit_cat=1)
+    rows = load_eval_questions(args_b.questions_file, args_b.max_items, args_b.limit_per_category)
+    # limit_per_category=1 means we load:
+    # - q_1 (from cat1)
+    # - q_3 (from cat2)
+    # So rows contains [q_1, q_3]. Index 2 should map to q_3.
+    assert len(rows) == 2
+    assert rows[0]["question_id"] == "q_1"
+    assert rows[1]["question_id"] == "q_3"
+    target_indices = parse_indices(args_b.question_indices, len(rows))
+    filtered_rows = [rows[i - 1] for i in sorted(target_indices) if 1 <= i <= len(rows)]
+    assert len(filtered_rows) == 1
+    assert filtered_rows[0]["question_id"] == "q_3"
+
+

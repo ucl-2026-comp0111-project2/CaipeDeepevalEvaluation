@@ -262,6 +262,7 @@ class AgenticRetriever(BaseRetriever):
         trace_log: bool = False,
         logdir: str = "logs",
         supervisor_url: Optional[str] = None,  # for compatibility
+        fail_on_error: bool = False,
     ) -> None:
         super().__init__()
         self.agent_api_url = (
@@ -281,6 +282,7 @@ class AgenticRetriever(BaseRetriever):
         self.documents_metadata: List[Dict[str, Any]] = []
         self.trace_log = trace_log
         self.logdir = logdir
+        self.fail_on_error = fail_on_error
 
         if use_a2a is not None:
             self.use_a2a = use_a2a
@@ -396,158 +398,182 @@ class AgenticRetriever(BaseRetriever):
         trace_log: Optional[bool] = None,
     ) -> List[tuple]:
         """Send query to the streaming BFF gateway endpoints."""
-        token = self._get_oidc_token()
-        headers = {"Content-Type": "application/json"}
-        if token:
-            headers["Authorization"] = f"Bearer {token}"
+        max_attempts = 3
+        backoff_base = 2.0
+        last_exception = None
 
-        agent_id = os.getenv("CAIPE_AGENT_ID") or "hello-world"
+        for attempt in range(1, max_attempts + 1):
+            token = self._get_oidc_token()
+            headers = {"Content-Type": "application/json"}
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
 
-        # Step 1: Create a new conversation session
-        conv_url = f"{self.agent_api_url.rstrip('/')}/api/chat/conversations"
-        conv_payload = {
-            "title": "Agentic Session",
-            "client_type": "webui",
-            "agent_id": agent_id,
-        }
+            agent_id = os.getenv("CAIPE_AGENT_ID") or "hello-world"
 
-        try:
-            logger.info("Creating conversation session on %s...", conv_url)
-            r_conv = httpx.post(
-                conv_url,
-                json=conv_payload,
-                headers=headers,
-                verify=not self.insecure,
-                timeout=self.timeout,
-            )
-            if r_conv.status_code == 401:
-                logger.warning("Gateway returned 401 Unauthorized. Attempting token refresh...")
-                if os.getenv("CAIPE_OIDC_TOKEN"):
-                    del os.environ["CAIPE_OIDC_TOKEN"]
-                token = self._get_oidc_token()
-                if token:
-                    headers["Authorization"] = f"Bearer {token}"
-                    logger.info("Retrying conversation session creation with fresh token...")
-                    r_conv = httpx.post(
-                        conv_url,
-                        json=conv_payload,
+            try:
+                # Step 1: Create a new conversation session
+                conv_url = f"{self.agent_api_url.rstrip('/')}/api/chat/conversations"
+                conv_payload = {
+                    "title": "Agentic Session",
+                    "client_type": "webui",
+                    "agent_id": agent_id,
+                }
+
+                logger.info(
+                    "Creating conversation session on %s... (Attempt %d/%d)",
+                    conv_url,
+                    attempt,
+                    max_attempts,
+                )
+                r_conv = httpx.post(
+                    conv_url,
+                    json=conv_payload,
+                    headers=headers,
+                    verify=not self.insecure,
+                    timeout=self.timeout,
+                )
+                if r_conv.status_code == 401:
+                    logger.warning("Gateway returned 401 Unauthorized. Attempting token refresh...")
+                    if os.getenv("CAIPE_OIDC_TOKEN"):
+                        del os.environ["CAIPE_OIDC_TOKEN"]
+                    token = self._get_oidc_token()
+                    if token:
+                        headers["Authorization"] = f"Bearer {token}"
+                        logger.info("Retrying conversation session creation with fresh token...")
+                        r_conv = httpx.post(
+                            conv_url,
+                            json=conv_payload,
+                            headers=headers,
+                            verify=not self.insecure,
+                            timeout=self.timeout,
+                        )
+                r_conv.raise_for_status()
+                conv_data = r_conv.json()
+                conversation_id = conv_data["data"]["conversation"]["_id"]
+                logger.info("Conversation session created with ID: %s", conversation_id)
+
+                # Step 2: Stream the chat start request
+                stream_url = f"{self.agent_api_url.rstrip('/')}/api/v1/chat/stream/start"
+                stream_payload = {
+                    "message": question,
+                    "conversation_id": conversation_id,
+                    "agent_id": agent_id,
+                    "protocol": "custom",
+                    "client_context": {
+                        "source": "eval",
+                        "tool_result_display_limit": -1,
+                    },
+                }
+
+                raw_contexts = []
+                self.last_answer = ""
+
+                # Resolve trace_log
+                should_trace = trace_log
+                if should_trace is None:
+                    should_trace = self.trace_log
+                if not should_trace:
+                    env_val = os.getenv("CAIPE_TRACE_LOG")
+                    if env_val is not None:
+                        should_trace = env_val.lower() in ("true", "1", "yes")
+
+                log_file = None
+                if should_trace and run_id:
+                    os.makedirs(self.logdir, exist_ok=True)
+                    log_filepath = os.path.join(self.logdir, f"agentic_run_{run_id}.log")
+                    try:
+                        log_file = open(log_filepath, "w", encoding="utf-8")
+                        logger.info("Capturing agentic stream log to %s", log_filepath)
+                    except Exception:
+                        logger.exception(
+                            "Failed to open agentic stream log file %s", log_filepath
+                        )
+
+                try:
+                    logger.info("Streaming query from %s...", stream_url)
+                    with httpx.stream(
+                        "POST",
+                        stream_url,
+                        json=stream_payload,
                         headers=headers,
                         verify=not self.insecure,
                         timeout=self.timeout,
-                    )
-            r_conv.raise_for_status()
-            conv_data = r_conv.json()
-            conversation_id = conv_data["data"]["conversation"]["_id"]
-            logger.info("Conversation session created with ID: %s", conversation_id)
-        except Exception:
-            logger.exception("Failed to create conversation session on gateway")
-            return []
-
-        # Step 2: Stream the chat start request
-        stream_url = f"{self.agent_api_url.rstrip('/')}/api/v1/chat/stream/start"
-        stream_payload = {
-            "message": question,
-            "conversation_id": conversation_id,
-            "agent_id": agent_id,
-            "protocol": "custom",
-            "client_context": {
-                "source": "eval",
-                "tool_result_display_limit": -1,
-            },
-        }
-
-        raw_contexts = []
-        self.last_answer = ""
-
-        # Resolve trace_log
-        should_trace = trace_log
-        if should_trace is None:
-            should_trace = self.trace_log
-        if not should_trace:
-            env_val = os.getenv("CAIPE_TRACE_LOG")
-            if env_val is not None:
-                should_trace = env_val.lower() in ("true", "1", "yes")
-
-        log_file = None
-        if should_trace and run_id:
-            os.makedirs(self.logdir, exist_ok=True)
-            log_filepath = os.path.join(self.logdir, f"agentic_run_{run_id}.log")
-            try:
-                log_file = open(log_filepath, "w", encoding="utf-8")
-                logger.info("Capturing agentic stream log to %s", log_filepath)
-            except Exception:
-                logger.exception(
-                    "Failed to open agentic stream log file %s", log_filepath
-                )
-
-        try:
-            logger.info("Streaming query from %s...", stream_url)
-            with httpx.stream(
-                "POST",
-                stream_url,
-                json=stream_payload,
-                headers=headers,
-                verify=not self.insecure,
-                timeout=self.timeout,
-            ) as response:
-                if response.status_code != 200:
-                    try:
-                        err_body = response.read().decode("utf-8")
-                        logger.error(
-                            "Gateway stream start returned HTTP %s: %s",
-                            response.status_code,
-                            err_body,
-                        )
-                    except Exception:
-                        logger.error(
-                            "Gateway stream start returned HTTP %s (failed to read body)",
-                            response.status_code,
-                        )
-                response.raise_for_status()
-                current_event = None
-                for line in response.iter_lines():
-                    if line:
-                        if log_file:
-                            if line.startswith("event: "):
-                                log_file.write(f"\n[{line}]\n")
-                            elif line.startswith("data: "):
-                                data_str = line[6:].strip()
-                                try:
-                                    data_json = json.loads(data_str)
-                                    log_file.write(
-                                        json.dumps(data_json, indent=2) + "\n"
-                                    )
-                                except Exception:
-                                    log_file.write(line + "\n")
-                            else:
-                                log_file.write(line + "\n")
-                            log_file.flush()
-
-                        if line.startswith("event: "):
-                            current_event = line[7:].strip()
-                            if current_event in ("tool_start", "tool_end"):
-                                self.last_answer = ""
-                        elif line.startswith("data: "):
-                            data_str = line[6:].strip()
+                    ) as response:
+                        if response.status_code != 200:
                             try:
-                                data_json = json.loads(data_str)
+                                err_body = response.read().decode("utf-8")
+                                logger.error(
+                                    "Gateway stream start returned HTTP %s: %s",
+                                    response.status_code,
+                                    err_body,
+                                )
                             except Exception:
-                                continue
-                            if current_event == "content":
-                                self.last_answer += data_json.get("text", "")
-                            elif current_event == "tool_end":
-                                tool_result = data_json.get("result", "")
-                                if tool_result:
-                                    raw_contexts.extend(
-                                        _parse_rag_context_artifact(tool_result)
-                                    )
-        except Exception:
-            logger.exception("Error during streaming query from gateway")
-        finally:
-            if log_file:
-                log_file.close()
+                                logger.error(
+                                    "Gateway stream start returned HTTP %s (failed to read body)",
+                                    response.status_code,
+                                )
+                        response.raise_for_status()
+                        current_event = None
+                        for line in response.iter_lines():
+                            if line:
+                                if log_file:
+                                    if line.startswith("event: "):
+                                        log_file.write(f"\n[{line}]\n")
+                                    elif line.startswith("data: "):
+                                        data_str = line[6:].strip()
+                                        try:
+                                            data_json = json.loads(data_str)
+                                            log_file.write(
+                                                json.dumps(data_json, indent=2) + "\n"
+                                            )
+                                        except Exception:
+                                            log_file.write(line + "\n")
+                                    else:
+                                        log_file.write(line + "\n")
+                                    log_file.flush()
 
-        return raw_contexts
+                                if line.startswith("event: "):
+                                    current_event = line[7:].strip()
+                                    if current_event in ("tool_start", "tool_end"):
+                                        self.last_answer = ""
+                                elif line.startswith("data: "):
+                                    data_str = line[6:].strip()
+                                    try:
+                                        data_json = json.loads(data_str)
+                                    except Exception:
+                                        continue
+                                    if current_event == "content":
+                                        self.last_answer += data_json.get("text", "")
+                                    elif current_event == "tool_end":
+                                        tool_result = data_json.get("result", "")
+                                        if tool_result:
+                                            raw_contexts.extend(
+                                                _parse_rag_context_artifact(tool_result)
+                                            )
+                    return raw_contexts
+
+                finally:
+                    if log_file:
+                        log_file.close()
+
+            except Exception as e:
+                last_exception = e
+                logger.warning(
+                    "Error on attempt %d/%d: %s",
+                    attempt,
+                    max_attempts,
+                    e,
+                )
+                if attempt < max_attempts:
+                    sleep_time = backoff_base**attempt
+                    logger.info("Waiting %.1f seconds before retrying...", sleep_time)
+                    time.sleep(sleep_time)
+
+        if last_exception:
+            logger.error("All %d attempts failed for gateway query.", max_attempts)
+            if self.fail_on_error:
+                raise last_exception
+        return []
 
     def get_top_k(
         self,
@@ -660,6 +686,8 @@ class AgenticRetriever(BaseRetriever):
         except Exception as e:
             latency_ms = (time.perf_counter() - start) * 1000
             logger.error(f"Agentic retrieval failed: {e}")
+            if getattr(self, "fail_on_error", False):
+                raise e
             return AgenticRAGResult(
                 answer="",
                 contexts=[],

@@ -447,3 +447,56 @@ def test_agentic_retriever_trace_log_negative(mock_post, mock_stream, tmp_path):
     # Log file should NOT exist
     log_file_path = os.path.join(logdir, "agentic_run_test_run_123.log")
     assert not os.path.exists(log_file_path)
+
+
+# ============================================================
+# 10. Retry Logic & fail_on_error Tests
+# ============================================================
+
+@mock.patch("httpx.post")
+def test_agentic_retriever_fail_on_error(mock_post):
+    mock_post.side_effect = Exception("Persistent failure")
+    ret = AgenticRetriever(
+        agent_api_url="https://gateway.service", use_a2a=False, fail_on_error=True
+    )
+    import pytest
+    with pytest.raises(Exception, match="Persistent failure"):
+        ret.retrieve("test question")
+
+
+@mock.patch("httpx.stream")
+@mock.patch("httpx.post")
+@mock.patch("time.sleep")  # avoid actual sleeping during tests
+@mock.patch.object(AgenticRetriever, "_get_oidc_token", return_value="fake-token")
+def test_agentic_retriever_retry_success(mock_get_token, mock_sleep, mock_post, mock_stream):
+    # First attempt: httpx.post raises an exception (e.g. timeout)
+    # Second attempt: succeeds
+    mock_conv_resp = mock.Mock()
+    mock_conv_resp.status_code = 201
+    mock_conv_resp.json.return_value = {
+        "data": {
+            "conversation": {
+                "_id": "conv-456"
+            }
+        }
+    }
+
+    mock_post.side_effect = [Exception("Transient timeout"), mock_conv_resp]
+
+    # Setup mock for stream_url on the second attempt
+    mock_stream_resp = mock.MagicMock()
+    mock_stream_resp.status_code = 200
+    mock_stream_resp.iter_lines.return_value = [
+        "event: content",
+        'data: {"text": "hello on retry"}',
+    ]
+    mock_stream.return_value.__enter__.return_value = mock_stream_resp
+
+    ret = AgenticRetriever(agent_api_url="https://gateway.service", use_a2a=False)
+    res = ret._query_gateway("test question", k=1)
+
+    assert res == []
+    assert ret.last_answer == "hello on retry"
+    assert mock_post.call_count == 2
+    assert mock_sleep.call_count == 1
+

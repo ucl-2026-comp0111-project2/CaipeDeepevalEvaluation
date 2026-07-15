@@ -102,6 +102,31 @@ def run_ingest(args: argparse.Namespace) -> None:
     print(f'Wrote data files to {args.data_dir}')
 
 
+def parse_indices(indices_str: str, max_len: int) -> set[int]:
+    """Parse string representation of indices (e.g., '1,2,5-8') into a set of 1-based indices."""
+    indices = set()
+    for part in indices_str.split(','):
+        part = part.strip()
+        if '-' in part:
+            try:
+                start_str, end_str = part.split('-', 1)
+                start = int(start_str.strip())
+                end = int(end_str.strip())
+                for i in range(start, end + 1):
+                    if 1 <= i <= max_len:
+                        indices.add(i)
+            except ValueError:
+                pass
+        else:
+            try:
+                i = int(part)
+                if 1 <= i <= max_len:
+                    indices.add(i)
+            except ValueError:
+                pass
+    return indices
+
+
 def run_eval(args: argparse.Namespace) -> None:
     ensure_dirs(args.results_dir)
     load_dotenv_loose(args.env_file)
@@ -120,7 +145,19 @@ def run_eval(args: argparse.Namespace) -> None:
     from deepeval.test_case import LLMTestCase
 
     start_eval_time = time.time()
-    rows = load_eval_questions(args.questions_file, args.max_items, getattr(args, 'limit_per_category', None))
+
+    # Load and filter rows
+    if getattr(args, 'question_ids', None):
+        # Bypass limits to find the target IDs anywhere in the dataset
+        rows = load_eval_questions(args.questions_file, None, None)
+        target_ids = {qid.strip() for qid in args.question_ids.split(',')}
+        rows = [row for row in rows if str(row.get('question_id')) in target_ids]
+    else:
+        rows = load_eval_questions(args.questions_file, args.max_items, getattr(args, 'limit_per_category', None))
+        if getattr(args, 'question_indices', None):
+            target_indices = parse_indices(args.question_indices, len(rows))
+            rows = [rows[i - 1] for i in sorted(target_indices) if 1 <= i <= len(rows)]
+
     results: list[dict[str, Any]] = []
 
     for idx, row in enumerate(rows, start=1):
@@ -140,6 +177,7 @@ def run_eval(args: argparse.Namespace) -> None:
                     supervisor_url=getattr(args, 'supervisor_url', 'http://localhost:8000'),
                     timeout=200.0,
                     logdir=str(args.results_dir / 'logs'),
+                    fail_on_error=getattr(args, 'fail_on_error', False),
                 )
             agentic_result = args._agentic_retriever.retrieve(question, k=args.top_k)
             answer = agentic_result.answer
@@ -501,6 +539,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Route queries through caipe-supervisor A2A endpoint")
     eval_parser.add_argument("--supervisor-url", default="http://localhost:8000",
         help="CAIPE supervisor URL for agentic eval")
+    eval_parser.add_argument('--question-ids', default=None,
+        help="Comma-separated list of specific question IDs to run/retry")
+    eval_parser.add_argument('--question-indices', default=None,
+        help="Comma-separated list or range of 1-based question indices to run/retry (e.g. 57, 57-60, 1,3,5)")
+    eval_parser.add_argument('--fail-on-error', action='store_true',
+        help="Fail loudly and raise an exception if a query evaluation fails after retries")
     eval_parser.set_defaults(func=run_eval)
 
     return parser
