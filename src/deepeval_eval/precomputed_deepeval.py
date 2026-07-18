@@ -14,6 +14,7 @@ if __package__ in (None, ''):
 from deepeval_eval.config import (
     DEFAULT_DATA_DIR,
     DEFAULT_ENV_FILE,
+    DEFAULT_GATE_CONFIG,
     DEFAULT_RESULTS_DIR,
     ensure_dirs,
     load_dotenv_loose,
@@ -142,6 +143,12 @@ def run_eval(args: argparse.Namespace) -> None:
 
     write_results(args.results_dir, args.benchmark, args.answer_mode, results)
 
+    if getattr(args, 'gate', False):
+        from deepeval_eval.gate import run_gate_on_results
+        passed = run_gate_on_results(results, args.gate_config, args.results_dir)
+        if not passed:
+            sys.exit(1)
+
 
 def write_results(results_dir: Path, benchmark: str, answer_mode: str, results: list[dict[str, Any]]) -> None:
     timestamp = time.strftime('%Y%m%d-%H%M%S')
@@ -210,6 +217,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument('--llm-base-url', default=None)
     parser.add_argument('--llm-api-key', default=None)
     parser.add_argument('--llm-model', default=None)
+    parser.add_argument('--gate', action='store_true',
+        help='Apply the quality gate after evaluation and exit non-zero if it fails.')
+    parser.add_argument('--gate-config', type=Path, default=DEFAULT_GATE_CONFIG,
+        help='Path to the gate threshold config (YAML/JSON).')
     parser.set_defaults(func=run_eval)
     return parser
 

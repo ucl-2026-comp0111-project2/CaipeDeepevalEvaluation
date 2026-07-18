@@ -12,4 +12,5 @@ dependencies = [
   'httpx',
   'requests',
   'pydantic',
+  'pyyaml',
 ]
