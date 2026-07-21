@@ -8,7 +8,7 @@ This guide explains how to set up the Python environment and run both evaluation
 | --- | --- |
 | Python 3.10 or later | Required by pyproject.toml. |
 | CAIPE rag-server | Expected at http://localhost:9446 by default. |
-| Cisco LiteLLM or compatible endpoint | Used for answer generation and DeepEval judge calls. |
+| OpenAI compatible LLM endpoint | Used for answer generation and DeepEval judge calls. |
 | EnterpriseRAG-Bench network access | Needed when downloading EnterpriseRAG-Bench files. |
 | HotpotQA preprocessed files | Required for HotpotQA ingestion. |
 
@@ -33,7 +33,7 @@ The dependencies are declared in pyproject.toml:
 | Dependency | Used for |
 | --- | --- |
 | deepeval | Evaluation metrics and test case objects. |
-| httpx | OpenAI compatible LiteLLM requests. |
+| httpx | OpenAI compatible LLM endpoint requests. |
 | requests | CAIPE and dataset download requests. |
 | pydantic | Structured schema handling in the LLM adapter. |
 
@@ -44,7 +44,7 @@ The scripts load environment values from a configured env file and from the curr
 Required model settings:
 
 ~~~text
-OPENAI_API_KEY=replace-with-cisco-litellm-key
+OPENAI_API_KEY=replace-with-api-key
 OPENAI_ENDPOINT=https://llm-proxy.dev.outshift.ai/v1
 OPENAI_MODEL_NAME=azure/gpt-5.4
 ~~~

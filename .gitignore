@@ -1,8 +1,13 @@
 # Python/runtime artefacts
 __pycache__/
 *.py[cod]
+*.egg-info/
+*.egg
+build/
+dist/
 .venv/
 venv/
+
 
 # Local secrets and environment files
 .env
@@ -16,6 +21,18 @@ results/
 # Tool/test artefacts
 .deepeval/
 *.log
+logs/
+.coverage
+.coverage.*
+htmlcov/
 .pytest_cache/
 .ruff_cache/
+.mypy_cache/
 .DS_Store
+.uv_cache/
+.uv_sync/
+
+# IDE configuration
+.vscode/
+.idea/
+.qwen/

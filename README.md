@@ -19,7 +19,7 @@ The current implementation evaluates CAIPE rag-server retrieval and context-grou
 | --- | --- |
 | Dataset ingestion | Ingests bounded samples from EnterpriseRAG-Bench and HotpotQA into CAIPE. |
 | Retrieval evaluation | Compares CAIPE retrieved document IDs with expected document IDs. |
-| Answer generation | Uses an OpenAI compatible Cisco LiteLLM endpoint to answer from retrieved context. |
+| Answer generation | Uses an OpenAI compatible LLM endpoint to answer from retrieved context. |
 | DeepEval scoring | Runs AnswerRelevancyMetric, FaithfulnessMetric, ContextualRelevancyMetric, ContextualPrecisionMetric, and ContextualRecallMetric. |
 | Ground-truth benchmark evaluation | Runs DeepEval against benchmark reference contexts and reference answers without calling CAIPE retrieval. |
 | HotpotQA checks | Adds normalized exact match and contains reference checks for short answers. |
@@ -46,7 +46,7 @@ caipe_deepeval_evaluation/
 |   |-- eval_precomputed.sh
 |-- src/
 |   |-- deepeval_eval/
-|       |-- caipe.py
+|       |-- caipe_client.py
 |       |-- config.py
 |       |-- enterprise_dataset.py
 |       |-- enterprise_deepeval.py
@@ -54,7 +54,7 @@ caipe_deepeval_evaluation/
 |       |-- hotpotqa_deepeval.py
 |       |-- precomputed_deepeval.py
 |       |-- io_utils.py
-|       |-- llm.py
+|       |-- llm_client.py
 |       |-- metrics.py
 |-- docs/
     |-- architecture.md
@@ -96,8 +96,8 @@ The evaluation code reads model settings from environment variables or from the 
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| OPENAI_API_KEY | Yes | API key for the OpenAI compatible Cisco LiteLLM endpoint. |
-| OPENAI_ENDPOINT | Yes | Base URL for the LiteLLM endpoint. |
+| OPENAI_API_KEY | Yes | API key for the OpenAI compatible LLM endpoint. |
+| OPENAI_ENDPOINT | Yes | Base URL for the OpenAI compatible LLM endpoint. |
 | OPENAI_MODEL_NAME | Yes | Model name passed to answer generation and DeepEval judge calls. |
 
 Default paths and folders are defined in src/deepeval_eval/config.py.

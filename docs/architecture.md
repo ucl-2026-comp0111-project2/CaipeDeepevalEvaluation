@@ -28,7 +28,7 @@ flowchart LR
 
     subgraph Evaluation
         I[retrieved contexts]
-        J[Cisco LiteLLM answer generation]
+        J[LLM answer generation]
         K[DeepEval judge]
         L[metrics.py]
         M[results JSON and CSV]
@@ -54,11 +54,15 @@ flowchart LR
 
 | Component | File | Responsibility |
 | --- | --- | --- |
+| Unified evaluator entry point | src/deepeval_eval/deepeval_evaluator.py | Unified CLI runner for benchmark and precomputed evaluations. |
 | Enterprise command entry point | src/deepeval_eval/enterprise_deepeval.py | CLI for EnterpriseRAG-Bench ingestion and evaluation. |
 | HotpotQA command entry point | src/deepeval_eval/hotpotqa_deepeval.py | CLI for HotpotQA ingestion and evaluation. |
-| CAIPE client | src/deepeval_eval/caipe.py | Wraps rag-server REST calls and extracts retrieved contexts and source metadata. |
-| Configuration | src/deepeval_eval/config.py | Defines default paths, environment loading, and LiteLLM setting resolution. |
-| LLM adapter | src/deepeval_eval/llm.py | Calls an OpenAI compatible LiteLLM endpoint and adapts it to DeepEval. |
+| Precomputed command entry point | src/deepeval_eval/precomputed_deepeval.py | CLI for offline precomputed evaluation runs. |
+| CAIPE client | src/deepeval_eval/caipe_client.py | Wraps rag-server REST calls and extracts retrieved contexts and source metadata. |
+| RAG client adapter | src/deepeval_eval/rag_client.py | Unified RAG client adapter for CAIPE and Agentic RAG endpoints. |
+| Precomputed RAG client | src/deepeval_eval/precomputed_client.py | Precomputed evaluation client handling offline or reference modes. |
+| Configuration | src/deepeval_eval/config.py | Defines default paths, environment loading, and LLM setting resolution. |
+| LLM adapter | src/deepeval_eval/llm_client.py | Calls an OpenAI compatible LLM endpoint and adapts it to DeepEval. |
 | Shared metrics | src/deepeval_eval/metrics.py | Builds DeepEval metrics and computes document ID and short answer checks. |
 | Enterprise dataset logic | src/deepeval_eval/enterprise_dataset.py | Downloads and samples EnterpriseRAG-Bench questions and source slices. |
 | HotpotQA dataset logic | src/deepeval_eval/hotpotqa_dataset.py | Reads preprocessed HotpotQA zip files and selects gold documents plus distractors. |

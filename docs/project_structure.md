@@ -32,10 +32,10 @@ All wrapper scripts resolve the repository root from the script location and pas
 
 | Path | Responsibility |
 | --- | --- |
-| src/deepeval_eval/caipe.py | CAIPE rag-server client, ingestion job operations, query calls, and retrieval response parsing. |
+| src/deepeval_eval/caipe_client.py | CAIPE rag-server client, ingestion job operations, query calls, and retrieval response parsing. |
 | src/deepeval_eval/config.py | Default paths, generated folder locations, environment loading, and LiteLLM setting resolution. |
 | src/deepeval_eval/io_utils.py | Cached download helpers and JSONL evaluation question loading. |
-| src/deepeval_eval/llm.py | OpenAI compatible LLM client, DeepEval model adapter, and prompt builders. |
+| src/deepeval_eval/llm_client.py | OpenAI compatible LLM client, DeepEval model adapter, and prompt builders. |
 | src/deepeval_eval/metrics.py | DeepEval metric construction, document ID scoring, and HotpotQA short-answer scoring. |
 
 ## Dataset-Specific Modules
@@ -63,9 +63,9 @@ These directories are ignored by Git and are produced during local runs.
 | --- | --- |
 | Configure model and paths | config.py, .env.example |
 | Load dataset | enterprise_dataset.py, hotpotqa_dataset.py, io_utils.py |
-| Ingest to CAIPE | enterprise_deepeval.py, hotpotqa_deepeval.py, caipe.py |
-| Retrieve from CAIPE | caipe.py |
-| Generate answers | llm.py |
+| Ingest to CAIPE | enterprise_deepeval.py, hotpotqa_deepeval.py, caipe_client.py |
+| Retrieve from CAIPE | caipe_client.py |
+| Generate answers | llm_client.py |
 | Score outputs | metrics.py, enterprise_deepeval.py, hotpotqa_deepeval.py |
 | Run from terminal | scripts/*.cmd, scripts/*.sh, or direct Python CLI |
 
@@ -73,5 +73,5 @@ These directories are ignored by Git and are produced during local runs.
 
 - Keep generated data and result files out of Git.
 - Add new dataset logic in a separate dataset module rather than expanding the entry point files.
-- Shared behaviour should go into caipe.py, llm.py, metrics.py, config.py, or io_utils.py.
+- Shared behaviour should go into caipe_client.py, llm_client.py, metrics.py, config.py, or io_utils.py.
 - If a new command changes outputs or arguments, update README.md and docs/setup_and_usage.md.

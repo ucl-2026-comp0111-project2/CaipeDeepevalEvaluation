@@ -9,7 +9,7 @@ sequenceDiagram
     participant Dataset
     participant LocalData as data folder
     participant CAIPE as CAIPE rag-server
-    participant LLM as Cisco LiteLLM
+    participant LLM as OpenAI Compatible LLM
     participant Eval as DeepEval
     participant Results as results folder
 
@@ -66,7 +66,7 @@ The response is parsed by extract_contexts_and_sources in caipe.py. The parser e
 
 ## 3. LLM Answer Generation
 
-Answer generation is implemented in llm.py.
+Answer generation is implemented in llm_client.py.
 
 The prompt asks the model to answer using only the retrieved context. EnterpriseRAG-Bench uses make_generation_prompt. HotpotQA uses make_short_answer_prompt because HotpotQA references are often short answers.
 

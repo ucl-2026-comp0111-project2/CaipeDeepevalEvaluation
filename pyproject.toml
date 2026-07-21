@@ -13,3 +13,6 @@ dependencies = [
   'requests',
   'pydantic',
 ]
+
+[tool.coverage.run]
+branch = true
