@@ -12,6 +12,7 @@ dependencies = [
   'httpx',
   'requests',
   'pydantic',
+  'pyyaml',
 ]
 
 [tool.coverage.run]

@@ -12,6 +12,7 @@ DEFAULT_CACHE_DIR = WORK_DIR / "cache"
 DEFAULT_RESULTS_DIR = WORK_DIR / "results"
 DEFAULT_ENV_FILE = Path.home() / "ai-platform-engineering" / ".env"
 DEFAULT_DOWNLOADS_DIR = Path.home() / "Downloads"
+DEFAULT_GATE_CONFIG = WORK_DIR / "gate_thresholds.yaml"
 
 
 def ensure_dirs(*paths: Path) -> None:

@@ -17,6 +17,7 @@ from deepeval_eval.config import (
     DEFAULT_CACHE_DIR,
     DEFAULT_DATA_DIR,
     DEFAULT_ENV_FILE,
+    DEFAULT_GATE_CONFIG,
     DEFAULT_RESULTS_DIR,
     ensure_dirs,
     load_dotenv_loose,
@@ -372,6 +373,14 @@ def _add_eval_args(parser: argparse.ArgumentParser) -> None:
         "--precompute", action="store_true",
         help="Run precomputed benchmark (gold-source retrieval via CAIPE)",
     )
+    parser.add_argument(
+        "--gate", action="store_true",
+        help="Apply the quality gate after evaluation and exit non-zero if it fails.",
+    )
+    parser.add_argument(
+        "--gate-config", type=Path, default=DEFAULT_GATE_CONFIG,
+        help="Path to quality gate threshold YAML config",
+    )
 
 
 def _build_config_args(args: argparse.Namespace) -> dict[str, Any]:
@@ -581,6 +590,13 @@ def _run_eval(args: argparse.Namespace) -> None:
         evaluation_time=eval_time,
         config_args=config_args,
     )
+
+    if getattr(args, "gate", False):
+        from deepeval_eval.gate import run_gate_on_results
+
+        passed = run_gate_on_results(results, args.gate_config, args.results_dir)
+        if not passed:
+            sys.exit(1)
 
 
 # ---------------------------------------------------------------------------

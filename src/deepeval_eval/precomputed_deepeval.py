@@ -14,6 +14,7 @@ from deepeval_eval.caipe_client import CaipeRagClient, extract_contexts_and_sour
 from deepeval_eval.config import (
     DEFAULT_DATA_DIR,
     DEFAULT_ENV_FILE,
+    DEFAULT_GATE_CONFIG,
     DEFAULT_RESULTS_DIR,
     load_dotenv_loose,
 )
@@ -22,6 +23,7 @@ from deepeval_eval.llm_client import (
     make_generation_prompt,
     make_short_answer_prompt,
 )
+
 # Ensure your custom metrics are imported properly from metrics.py
 
 
@@ -112,8 +114,9 @@ def write_results(
     config = dict(config_args)
     config["datasource"] = f"{benchmark}_precomputed"
     prefix = f"precomputed_deepeval_{benchmark}_{answer_mode}"
-    deepeval_evaluator._write_results(results_dir, prefix, results, evaluation_time, config)
-
+    deepeval_evaluator._write_results(
+        results_dir, prefix, results, evaluation_time, config
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -144,6 +147,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--datasource-id", type=str, default=None, help="The target CAIPE datasource"
+    )
+    parser.add_argument(
+        "--gate",
+        action="store_true",
+        help="Apply the quality gate after evaluation and exit non-zero if it fails.",
+    )
+    parser.add_argument(
+        "--gate-config",
+        type=Path,
+        default=DEFAULT_GATE_CONFIG,
+        help="Path to the gate threshold config (YAML/JSON).",
     )
     parser.set_defaults(func=run_eval)
     return parser

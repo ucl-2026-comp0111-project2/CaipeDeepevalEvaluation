@@ -14,6 +14,7 @@ from deepeval_eval.config import (
     DEFAULT_CACHE_DIR,
     DEFAULT_DATA_DIR,
     DEFAULT_ENV_FILE,
+    DEFAULT_GATE_CONFIG,
     DEFAULT_RESULTS_DIR,
     ensure_dirs,
     load_dotenv_loose,
@@ -227,6 +228,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--fail-on-error",
         action="store_true",
         help="Fail loudly and raise an exception if a query evaluation fails after retries",
+    )
+    eval_parser.add_argument(
+        "--gate",
+        action="store_true",
+        help="Apply the quality gate after evaluation and exit non-zero if it fails.",
+    )
+    eval_parser.add_argument(
+        "--gate-config",
+        type=Path,
+        default=DEFAULT_GATE_CONFIG,
+        help="Path to the gate threshold config (YAML/JSON).",
     )
     eval_parser.set_defaults(func=run_eval)
 
