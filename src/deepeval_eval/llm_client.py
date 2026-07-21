@@ -80,7 +80,7 @@ class OpenAICompatibleClient:
 
 
 # DeepEval expects its own model interface; this adapter routes those judge
-# calls through the Cisco LiteLLM OpenAI-compatible endpoint.
+# calls through OpenAI-compatible endpoint.
 class DeepEvalJudge:
     def __init__(self, provider: str, model: str, client: OpenAICompatibleClient):
         from deepeval.models.base_model import DeepEvalBaseLLM

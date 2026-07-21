@@ -38,11 +38,28 @@ def load_dotenv_loose(path: Path) -> dict[str, str]:
     return values
 
 
-def resolve_litellm_settings(env_file: Path, base_url: str | None, api_key: str | None, model: str | None) -> tuple[str, str, str]:
+def resolve_llm_settings(
+    env_file: Path, base_url: str | None, api_key: str | None, model: str | None
+) -> tuple[str, str, str]:
     env_values = load_dotenv_loose(env_file)
-    resolved_base_url = base_url or env_values.get("OPENAI_ENDPOINT") or os.environ.get("OPENAI_ENDPOINT")
-    resolved_api_key = api_key or env_values.get("OPENAI_API_KEY") or os.environ.get("OPENAI_API_KEY")
-    resolved_model = model or env_values.get("OPENAI_MODEL_NAME") or os.environ.get("OPENAI_MODEL_NAME")
+    resolved_base_url = (
+        base_url
+        or env_values.get("OPENAI_ENDPOINT")
+        or os.environ.get("OPENAI_ENDPOINT")
+    )
+    resolved_api_key = (
+        api_key or env_values.get("OPENAI_API_KEY") or os.environ.get("OPENAI_API_KEY")
+    )
+    resolved_model = (
+        model
+        or env_values.get("OPENAI_MODEL_NAME")
+        or os.environ.get("OPENAI_MODEL_NAME")
+    )
     if not resolved_base_url or not resolved_api_key or not resolved_model:
-        raise RuntimeError("Missing Cisco LiteLLM settings. Need OPENAI_ENDPOINT, OPENAI_API_KEY, and OPENAI_MODEL_NAME.")
+        raise RuntimeError(
+            "Missing LLM settings. Need OPENAI_ENDPOINT, OPENAI_API_KEY, and OPENAI_MODEL_NAME."
+        )
     return resolved_base_url, resolved_api_key, resolved_model
+
+
+resolve_litellm_settings = resolve_llm_settings

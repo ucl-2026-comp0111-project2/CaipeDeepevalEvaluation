@@ -4,6 +4,8 @@ import requests
 import time
 from typing import Any
 
+from deepeval_eval.rag_client import BaseRagClient, RagQueryResult  # Re-exported for backward compatibility
+
 
 def check_response(resp: requests.Response) -> requests.Response:
     if not resp.ok:
@@ -14,7 +16,7 @@ def check_response(resp: requests.Response) -> requests.Response:
 
 
 # Thin wrapper around CAIPE rag-server REST endpoints.
-class CaipeRagClient:
+class CaipeRagClient(BaseRagClient):
     def __init__(
         self,
         base_url: str,
@@ -178,7 +180,7 @@ class CaipeRagClient:
             if resp.status_code >= 500:
                 check_response(resp)
 
-    def query(
+    def query_raw(
         self, question: str, datasource_id: str | None, limit: int
     ) -> list[dict[str, Any]]:
         self.ensure_authenticated()
@@ -195,6 +197,51 @@ class CaipeRagClient:
         if isinstance(data, dict):
             return list(data.get("results") or [])
         return []
+
+    def query(
+        self,
+        question: str,
+        reference: str = "",
+        datasource_id: str | None = None,
+        top_k: int = 3,
+        answer_mode: str = "generate",
+        benchmark: str = "enterprise",
+        llm_client: Any = None,
+        max_context_chars: int = 12000,
+        **kwargs: Any,
+    ) -> RagQueryResult:
+        start_time = time.time()
+        retrieved_raw = self.query_raw(question, datasource_id, top_k)
+        contexts, sources = extract_contexts_and_sources(retrieved_raw)
+        trimmed_contexts = [c[:max_context_chars] for c in contexts]
+
+        if benchmark == "hotpotqa":
+            from deepeval_eval.llm_client import make_short_answer_prompt
+            if llm_client is None:
+                raise ValueError("llm_client is required for answer generation")
+            answer = str(llm_client.generate(make_short_answer_prompt(question, trimmed_contexts)))
+        else:
+            from deepeval_eval.llm_client import make_generation_prompt
+            if llm_client is None:
+                raise ValueError("llm_client is required for answer generation")
+            answer = str(llm_client.generate(make_generation_prompt(question, trimmed_contexts)))
+
+        latency_sec = time.time() - start_time
+        retrieved_ids = [
+            str(s.get("document_id"))
+            for s in sources
+            if s.get("document_id") is not None
+        ]
+
+        return RagQueryResult(
+            answer=answer,
+            contexts=trimmed_contexts,
+            sources=sources,
+            retrieved_doc_ids=retrieved_ids,
+            latency_sec=latency_sec,
+            latency_ms=latency_sec * 1000.0,
+            log_file=" ",
+        )
 
 
 def extract_contexts_and_sources(
@@ -235,3 +282,22 @@ def extract_contexts_and_sources(
             }
         )
     return contexts, sources
+
+
+def build_caipe_client(env_values: dict[str, Any]) -> CaipeRagClient:
+    """Helper to instantiate CaipeRagClient from environment dict."""
+    def _environ_get(key: str, default: str | None = None) -> str | None:
+        return env_values.get(key) or default
+
+    return CaipeRagClient(
+        base_url=_environ_get("CAIPE_BASE_URL", "https://caipe.homelab/api/rag-server") or "https://caipe.homelab/api/rag-server",
+        token=_environ_get("CAIPE_AUTH_TOKEN") or _environ_get("AUTH_TOKEN"),
+        verify=(_environ_get("INSECURE_SSL", "false") or "false").lower() not in ("true", "1", "yes"),
+        keycloak_url=_environ_get(
+            "KEYCLOAK_URL",
+            "https://keycloak.caipe.homelab/realms/caipe/protocol/openid-connect/token",
+        ),
+        client_id=_environ_get("CAIPE_CLIENT_ID"),
+        client_secret=_environ_get("CAIPE_CLIENT_SECRET"),
+    )
+
