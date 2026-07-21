@@ -36,3 +36,4 @@ htmlcov/
 .vscode/
 .idea/
 .qwen/
+*.egg-info/
