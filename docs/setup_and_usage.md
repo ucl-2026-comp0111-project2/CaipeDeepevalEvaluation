@@ -45,7 +45,7 @@ Required model settings:
 
 ~~~text
 OPENAI_API_KEY=replace-with-api-key
-OPENAI_ENDPOINT=https://llm-proxy.dev.outshift.ai/v1
+OPENAI_ENDPOINT=https://api.openai.com/v1
 OPENAI_MODEL_NAME=azure/gpt-5.4
 ~~~
 
