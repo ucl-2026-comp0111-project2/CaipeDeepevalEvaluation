@@ -1,7 +1,49 @@
 import json
 from pathlib import Path
-import pytest
-from deepeval_eval.io_utils import load_eval_questions
+from unittest.mock import MagicMock, patch
+from deepeval_eval.io_utils import load_eval_questions, download_text, download_bytes
+
+
+def test_download_text_positive(tmp_path: Path) -> None:
+    cache_path = tmp_path / "cache.txt"
+    mock_resp = MagicMock()
+    mock_resp.text = "downloaded content"
+
+    with patch("requests.get", return_value=mock_resp):
+        res = download_text("http://example.com/test.txt", cache_path)
+        assert res == "downloaded content"
+        assert cache_path.read_text() == "downloaded content"
+
+    # Cached hit
+    res_cached = download_text("http://example.com/test.txt", cache_path)
+    assert res_cached == "downloaded content"
+
+
+def test_download_bytes_positive(tmp_path: Path) -> None:
+    cache_path = tmp_path / "cache.bin"
+    mock_resp = MagicMock()
+    mock_resp.content = b"downloaded bytes"
+
+    with patch("requests.get", return_value=mock_resp):
+        res = download_bytes("http://example.com/test.bin", cache_path)
+        assert res == b"downloaded bytes"
+        assert cache_path.read_bytes() == b"downloaded bytes"
+
+    # Cached hit
+    res_cached = download_bytes("http://example.com/test.bin", cache_path)
+    assert res_cached == b"downloaded bytes"
+
+
+def test_load_eval_questions_category_limit(tmp_path: Path) -> None:
+    jsonl_path = tmp_path / "questions.jsonl"
+    jsonl_path.write_text(
+        '{"category": "cat1", "level": "easy"}\n'
+        '{"category": "cat1", "level": "easy"}\n'
+        '{"category": "cat1", "level": "hard"}\n'
+    )
+
+    rows = load_eval_questions(jsonl_path, max_items=None, limit_per_category=1, combine_with_level=True)
+    assert len(rows) == 2  # 1 for cat1-easy, 1 for cat1-hard
 
 
 def test_load_eval_questions_basic(tmp_path: Path):

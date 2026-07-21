@@ -241,6 +241,64 @@ def test_agentic_rag_init_negative():
     assert rag._agentic_retriever.agent_api_url is not None
 
 
+def test_dedupe_and_merge_contexts_dup() -> None:
+    from deepeval_eval.agentic_rag import _dedupe_and_merge_contexts
+    # Duplicate doc_id with longer content replaces shorter content + invalid items
+    items = [
+        None,
+        "invalid_item",
+        ("only_one_elem",),
+        ("short", "d1"),
+        ("longer content here", "d1"),
+        ("no doc id content", None),
+    ]
+    res = _dedupe_and_merge_contexts(items)
+    assert len(res) == 2
+    assert res[0] == ("longer content here", "d1")
+    assert res[1][1] is None
+
+
+def test_agentic_rag_usage_artifacts_parsing() -> None:
+    from deepeval_eval.agentic_rag import AgenticRAG
+    rag = AgenticRAG(agent_api_url="http://localhost:8000")
+    rag._agentic_retriever.last_answer = "Ans"
+    rag._agentic_retriever.documents = ["Doc"]
+    rag._agentic_retriever.documents_metadata = [{"doc_id": "d1"}]
+    rag._agentic_retriever.last_raw_response = {
+        "result": {
+            "artifacts": [
+                {"metadata": {"usage_metadata": {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15}}}
+            ]
+        }
+    }
+    with mock.patch.object(rag._agentic_retriever, "get_top_k", return_value=[(0, 0.9)]):
+        res = rag.query("Q?", run_id="r1")
+        assert res["usage"]["total_tokens"] == 15
+
+
+def test_agentic_retriever_error_fallback() -> None:
+    from deepeval_eval.agentic_rag import AgenticRetriever
+    retriever = AgenticRetriever(agent_api_url="http://localhost:8000")
+    with mock.patch.object(retriever, "get_top_k", side_effect=ValueError("Gateway connection error")):
+        res = retriever.retrieve("What is X?")
+        assert res.error == "Gateway connection error"
+        assert res.answer == ""
+        assert res.contexts == []
+
+
+def test_agentic_rag_query_default_run_id() -> None:
+    from deepeval_eval.agentic_rag import AgenticRAG
+
+    rag = AgenticRAG(agent_api_url="http://localhost:8000")
+    rag._agentic_retriever.last_answer = "Ans"
+    rag._agentic_retriever.documents = ["Doc text"]
+    rag._agentic_retriever.documents_metadata = [{"doc_id": "d1"}]
+    with mock.patch.object(rag._agentic_retriever, "get_top_k", return_value=[(0, 0.9)]):
+        res = rag.query("Test question", run_id=None)
+        assert res["answer"] == "Ans"
+        assert len(res["retrieved_docs"]) == 1
+
+
 @mock.patch("deepeval_eval.agentic_rag.AgenticRAG.export_traces_to_log")
 def test_agentic_rag_query_positive(mock_export):
     # Positive: successful query and usage parsing
