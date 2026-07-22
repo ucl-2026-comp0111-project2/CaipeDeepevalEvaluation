@@ -1,4 +1,5 @@
 from deepeval_eval.prompt_style import (
+    DEFAULT_PROMPT_STYLE,
     PromptStyle,
     build_prompt,
     load_prompt_styles_from_config,
@@ -6,6 +7,7 @@ from deepeval_eval.prompt_style import (
 )
 
 __all__ = [
+    "DEFAULT_PROMPT_STYLE",
     "PromptStyle",
     "build_prompt",
     "load_prompt_styles_from_config",

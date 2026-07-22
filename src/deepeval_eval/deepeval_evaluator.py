@@ -134,7 +134,11 @@ def _build_config_args(args: argparse.Namespace) -> dict[str, Any]:
 
 def _run_eval(args: argparse.Namespace) -> None:
     """CLI handler that builds an EvalConfig and dispatches to eval_engine.run_evaluation."""
-    ds_name = getattr(args, "dataset_name", None) or getattr(args, "dataset", None) or getattr(args, "benchmark", "enterprise")
+    ds_name = (
+        getattr(args, "dataset_name", None)
+        or getattr(args, "dataset", None)
+        or getattr(args, "benchmark", "enterprise")
+    )
     config = EvalConfig(
         dataset_name=ds_name,
         answer_mode=getattr(args, "answer_mode", "reference"),
@@ -229,4 +233,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

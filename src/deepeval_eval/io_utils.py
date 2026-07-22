@@ -6,12 +6,20 @@ from pathlib import Path
 import requests
 
 
+def sanitize_path(path_val: str | None) -> str | None:
+    """Sanitize file paths to prevent internal host OS directory leakage in API and result outputs."""
+    if not path_val or not isinstance(path_val, str):
+        return path_val
+    clean_path = path_val.rstrip("/\\")
+    return Path(clean_path).name if clean_path else path_val
+
+
 def download_text(url: str, cache_path: Path, timeout: int = 60) -> str:
     if cache_path.exists():
-        return cache_path.read_text(encoding='utf-8')
+        return cache_path.read_text(encoding="utf-8")
     resp = requests.get(url, timeout=timeout)
     resp.raise_for_status()
-    cache_path.write_text(resp.text, encoding='utf-8')
+    cache_path.write_text(resp.text, encoding="utf-8")
     return resp.text
 
 
@@ -34,14 +42,14 @@ def load_eval_questions(
 ) -> list[dict]:
     rows: list[dict] = []
     category_counts: dict[tuple[str, str | None] | str, int] = {}
-    with path.open('r', encoding='utf-8') as f:
+    with path.open("r", encoding="utf-8") as f:
         for line in f:
             if not line.strip():
                 continue
             item = json.loads(line)
-            cat = item.get('category', 'basic') or 'basic'
+            cat = item.get("category", "basic") or "basic"
             if limit_per_category is not None:
-                key = (cat, item.get('level')) if combine_with_level else cat
+                key = (cat, item.get("level")) if combine_with_level else cat
                 count = category_counts.get(key, 0)
                 if count >= limit_per_category:
                     continue
@@ -50,5 +58,3 @@ def load_eval_questions(
             if max_items and len(rows) >= max_items:
                 break
     return rows
-
-

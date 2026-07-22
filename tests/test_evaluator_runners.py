@@ -8,6 +8,8 @@ from deepeval_eval.deepeval_evaluator import (
     _build_config_args,
     _build_rag_client,
     _run_eval,
+)
+from deepeval_eval.deepeval_evaluator import (
     build_parser as build_evaluator_parser,
 )
 from deepeval_eval.enterprise_deepeval import build_parser as build_enterprise_parser
@@ -80,6 +82,7 @@ def test_build_parsers_positive() -> None:
 
 def test_enterprise_deepeval_cli(tmp_path: Path) -> None:
     from deepeval_eval import enterprise_deepeval
+
     with patch("sys.argv", ["enterprise_deepeval", "--help"]):
         try:
             enterprise_deepeval.main()
@@ -89,6 +92,7 @@ def test_enterprise_deepeval_cli(tmp_path: Path) -> None:
 
 def test_hotpotqa_deepeval_cli(tmp_path: Path) -> None:
     from deepeval_eval import hotpotqa_deepeval
+
     with patch("sys.argv", ["hotpotqa_deepeval", "--help"]):
         try:
             hotpotqa_deepeval.main()
@@ -100,7 +104,9 @@ def test_enterprise_deepeval_subcommands(tmp_path: Path, monkeypatch) -> None:
     from deepeval_eval import enterprise_deepeval
 
     parser = enterprise_deepeval.build_parser()
-    monkeypatch.setattr("deepeval_eval.caipe_client.build_caipe_client", lambda env: MagicMock())
+    monkeypatch.setattr(
+        "deepeval_eval.caipe_client.build_caipe_client", lambda env: MagicMock()
+    )
 
     # Test ingest subcommand
     args_ing = parser.parse_args(["--data-dir", str(tmp_path), "ingest"])
@@ -108,7 +114,9 @@ def test_enterprise_deepeval_subcommands(tmp_path: Path, monkeypatch) -> None:
 
     # Test eval subcommand with mock
     monkeypatch.setattr("deepeval_eval.deepeval_evaluator._run_eval", lambda args: None)
-    args_eval = parser.parse_args(["--results-dir", str(tmp_path), "eval", "--top-k", "3"])
+    args_eval = parser.parse_args(
+        ["--results-dir", str(tmp_path), "eval", "--top-k", "3"]
+    )
     args_eval.func(args_eval)
 
 
@@ -116,17 +124,28 @@ def test_enterprise_deepeval_full_ingest(tmp_path: Path, monkeypatch) -> None:
     from deepeval_eval import enterprise_deepeval
 
     parser = enterprise_deepeval.build_parser()
-    args = parser.parse_args(["--data-dir", str(tmp_path), "ingest", "--reset", "--batch-size", "1"])
+    args = parser.parse_args(
+        ["--data-dir", str(tmp_path), "ingest", "--reset", "--batch-size", "1"]
+    )
 
     mock_q = MagicMock(expected_doc_ids=["d1"])
-    mock_doc = MagicMock(text="Doc text", doc_id="d1", title="Title", source_type="slack")
-    monkeypatch.setattr("deepeval_eval.enterprise_dataset.load_questions", lambda c: [mock_q])
-    monkeypatch.setattr("deepeval_eval.enterprise_dataset.fetch_documents", lambda s, limit, c, r: [mock_doc])
+    mock_doc = MagicMock(
+        text="Doc text", doc_id="d1", title="Title", source_type="slack"
+    )
+    monkeypatch.setattr(
+        "deepeval_eval.enterprise_dataset.load_questions", lambda c: [mock_q]
+    )
+    monkeypatch.setattr(
+        "deepeval_eval.enterprise_dataset.fetch_documents",
+        lambda s, limit, c, r: [mock_doc],
+    )
 
     mock_client = MagicMock()
     mock_client.register_ingestor.return_value = ("ing1", 10)
     mock_client.open_job.return_value = "job1"
-    monkeypatch.setattr("deepeval_eval.enterprise_deepeval.CaipeRagClient", lambda *a, **kw: mock_client)
+    monkeypatch.setattr(
+        "deepeval_eval.enterprise_deepeval.CaipeRagClient", lambda *a, **kw: mock_client
+    )
 
     args.func(args)
     assert (tmp_path / "enterprise_deepeval_corpus.jsonl").exists()
@@ -139,30 +158,72 @@ def test_hotpotqa_deepeval_full_ingest_mocked(tmp_path: Path, monkeypatch) -> No
     dummy_zip = tmp_path / "dummy.zip"
     dummy_zip.write_text("dummy")
 
-    args = parser.parse_args(["--data-dir", str(tmp_path), "ingest", "--reset", "--batch-size", "1", "--questions-zip", str(dummy_zip), "--documents-zip", str(dummy_zip)])
+    args = parser.parse_args(
+        [
+            "--data-dir",
+            str(tmp_path),
+            "ingest",
+            "--reset",
+            "--batch-size",
+            "1",
+            "--questions-zip",
+            str(dummy_zip),
+            "--documents-zip",
+            str(dummy_zip),
+        ]
+    )
 
-    mock_q = [{"question_id": "hq1", "user_input": "Q", "reference": "A", "category": "cat", "level": "easy", "expected_doc_ids": ["d1"]}]
+    mock_q = [
+        {
+            "question_id": "hq1",
+            "user_input": "Q",
+            "reference": "A",
+            "category": "cat",
+            "level": "easy",
+            "expected_doc_ids": ["d1"],
+        }
+    ]
     mock_pool = {"d1": {"document_id": "d1", "title": "T", "text": "Content"}}
 
-    monkeypatch.setattr("deepeval_eval.hotpotqa_dataset.read_jsonl_zip", lambda p: mock_q)
-    monkeypatch.setattr("deepeval_eval.hotpotqa_dataset.load_questions", lambda p: mock_q)
-    monkeypatch.setattr("deepeval_eval.hotpotqa_dataset.load_document_pool", lambda p: mock_pool)
-    monkeypatch.setattr("deepeval_eval.hotpotqa_dataset.resolve_zip", lambda p, fallback: dummy_zip)
-    monkeypatch.setattr("deepeval_eval.hotpotqa_deepeval.select_documents", lambda q, p, d, m: [{"document_id": "d1", "title": "T", "text": "Content"}])
+    monkeypatch.setattr(
+        "deepeval_eval.hotpotqa_dataset.read_jsonl_zip", lambda p: mock_q
+    )
+    monkeypatch.setattr(
+        "deepeval_eval.hotpotqa_dataset.load_questions", lambda p: mock_q
+    )
+    monkeypatch.setattr(
+        "deepeval_eval.hotpotqa_dataset.load_document_pool", lambda p: mock_pool
+    )
+    monkeypatch.setattr(
+        "deepeval_eval.hotpotqa_dataset.resolve_zip", lambda p, fallback: dummy_zip
+    )
+    monkeypatch.setattr(
+        "deepeval_eval.hotpotqa_deepeval.select_documents",
+        lambda q, p, d, m: [{"document_id": "d1", "title": "T", "text": "Content"}],
+    )
 
     mock_client = MagicMock()
     mock_client.register_ingestor.return_value = ("ing1", 10)
     mock_client.open_job.return_value = "job1"
-    monkeypatch.setattr("deepeval_eval.hotpotqa_deepeval.CaipeRagClient", lambda *a, **kw: mock_client)
+    monkeypatch.setattr(
+        "deepeval_eval.hotpotqa_deepeval.CaipeRagClient", lambda *a, **kw: mock_client
+    )
 
     args.func(args)
     mock_client.ingest_batch.assert_called_once()
 
 
-def test_precomputed_deepeval_make_answer_and_helpers(tmp_path: Path, monkeypatch) -> None:
+def test_precomputed_deepeval_make_answer_and_helpers(
+    tmp_path: Path, monkeypatch
+) -> None:
     from deepeval_eval.precomputed_deepeval import (
-        build_gold_sources, context_from_row, retrieve_live_context_and_sources, make_answer,
-        run_eval, write_results, main
+        build_gold_sources,
+        context_from_row,
+        main,
+        make_answer,
+        retrieve_live_context_and_sources,
+        run_eval,
+        write_results,
     )
 
     row = {"expected_doc_ids": ["d1"], "source_types": ["slack"]}
@@ -190,18 +251,23 @@ def test_precomputed_deepeval_make_answer_and_helpers(tmp_path: Path, monkeypatc
     args_gen = MagicMock(answer_mode="generated", dataset_name="enterprise")
     assert make_answer(args_gen, mock_llm, "Q?", "Ref!", ["C"]) == "Generated answer"
 
-    args_short = MagicMock(answer_mode="generated", dataset_name="hotpotqa", prompt_style="short")
+    args_short = MagicMock(
+        answer_mode="generated", dataset_name="hotpotqa", prompt_style="short"
+    )
     assert make_answer(args_short, mock_llm, "Q?", "Ref!", ["C"]) == "Generated answer"
 
     # Test write_results
     write_results(tmp_path)
-    summary_files = list(tmp_path.glob("precomputed_deepeval_enterprise_reference_*_summary.json"))
+    summary_files = list(
+        tmp_path.glob("precomputed_deepeval_enterprise_reference_*_summary.json")
+    )
     assert len(summary_files) == 1
 
     # Test run_eval deprecation warning
     mock_args = MagicMock()
     monkeypatch.setattr("deepeval_eval.deepeval_evaluator._run_eval", lambda a: None)
     import warnings
+
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
         run_eval(mock_args)
@@ -218,7 +284,9 @@ def test_precomputed_deepeval_make_answer_and_helpers(tmp_path: Path, monkeypatc
 
 def test_run_eval_positive(tmp_path: Path, monkeypatch) -> None:
     env_file = tmp_path / ".env"
-    env_file.write_text("OPENAI_ENDPOINT=http://localhost\nOPENAI_API_KEY=k\nOPENAI_MODEL_NAME=m\n")
+    env_file.write_text(
+        "OPENAI_ENDPOINT=http://localhost\nOPENAI_API_KEY=k\nOPENAI_MODEL_NAME=m\n"
+    )
 
     questions_file = tmp_path / "questions.jsonl"
     questions_file.write_text(
@@ -254,8 +322,12 @@ def test_run_eval_positive(tmp_path: Path, monkeypatch) -> None:
         latency_sec=0.1,
     )
 
-    with patch("deepeval_eval.deepeval_evaluator._build_rag_client", return_value=mock_rag), \
-         patch("deepeval_eval.deepeval_evaluator.build_metrics", return_value=[]):
+    with (
+        patch(
+            "deepeval_eval.deepeval_evaluator._build_rag_client", return_value=mock_rag
+        ),
+        patch("deepeval_eval.deepeval_evaluator.build_metrics", return_value=[]),
+    ):
         _run_eval(args)
 
     results_dir = tmp_path / "results"
@@ -265,13 +337,18 @@ def test_run_eval_positive(tmp_path: Path, monkeypatch) -> None:
 def test_deepeval_evaluator_prompt_config_cli(tmp_path: Path) -> None:
     parser = build_evaluator_parser()
     prompt_cfg = tmp_path / "custom_prompts.yaml"
-    prompt_cfg.write_text("prompt_styles:\n  my_style: 'Q: {question} C: {context}'\n", encoding="utf-8")
+    prompt_cfg.write_text(
+        "prompt_styles:\n  my_style: 'Q: {question} C: {context}'\n", encoding="utf-8"
+    )
 
-    args = parser.parse_args([
-        "eval",
-        "--prompt-style", "my_style",
-        "--prompt-config", str(prompt_cfg),
-    ])
+    args = parser.parse_args(
+        [
+            "eval",
+            "--prompt-style",
+            "my_style",
+            "--prompt-config",
+            str(prompt_cfg),
+        ]
+    )
     assert args.prompt_style == "my_style"
     assert args.prompt_config == prompt_cfg
-

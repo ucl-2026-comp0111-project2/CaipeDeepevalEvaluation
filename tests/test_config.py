@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+
 import pytest
 
 from deepeval_eval.config import ensure_dirs, load_dotenv_loose, resolve_llm_settings
@@ -26,7 +27,7 @@ def test_load_dotenv_loose_positive(tmp_path: Path) -> None:
     env_file.write_text(
         "# Comment line\n"
         "OPENAI_ENDPOINT=https://example.com/v1\n"
-        "OPENAI_API_KEY=\"secret_key\"\n"
+        'OPENAI_API_KEY="secret_key"\n'
         "OPENAI_MODEL_NAME='gpt-4o'\n"
         "INVALID_LINE_WITHOUT_EQUALS\n",
         encoding="utf-8",
@@ -44,7 +45,9 @@ def test_load_dotenv_loose_negative(tmp_path: Path) -> None:
     assert result == {}
 
 
-def test_resolve_llm_settings_positive(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_resolve_llm_settings_positive(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     env_file = tmp_path / ".env"
     env_file.write_text(
         "OPENAI_ENDPOINT=http://localhost:8000\n"
@@ -57,13 +60,17 @@ def test_resolve_llm_settings_positive(tmp_path: Path, monkeypatch: pytest.Monke
     assert key == "testkey"
     assert model == "testmodel"
 
-    url2, key2, model2 = resolve_llm_settings(env_file, "http://override", "overridekey", "overridemodel")
+    url2, key2, model2 = resolve_llm_settings(
+        env_file, "http://override", "overridekey", "overridemodel"
+    )
     assert url2 == "http://override"
     assert key2 == "overridekey"
     assert model2 == "overridemodel"
 
 
-def test_resolve_llm_settings_negative(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_resolve_llm_settings_negative(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     env_file = tmp_path / "empty.env"
     env_file.write_text("", encoding="utf-8")
     monkeypatch.delenv("OPENAI_ENDPOINT", raising=False)

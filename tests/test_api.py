@@ -8,13 +8,14 @@ from unittest.mock import MagicMock, patch
 from fastapi.testclient import TestClient
 
 from deepeval_eval.api import (
+    JobManager,
     JobStatusEnum,
     LocalCacheManager,
-    JobManager,
     app,
     compute_eval_hash,
     execute_evaluation_job,
     run_server,
+    sanitize_config_args,
 )
 
 client = TestClient(app)
@@ -23,6 +24,39 @@ client = TestClient(app)
 # ---------------------------------------------------------------------------
 # Unit Tests for Helper Functions & Cache Management
 # ---------------------------------------------------------------------------
+
+
+def test_sanitize_config_args_positive():
+    """Verify sensitive keys, env_file, and null values are omitted, and questions_file is trimmed to basename."""
+    raw_config = {
+        "dataset_name": "enterprise",
+        "questions_file": "/var/folders/_c/123/T/tmp/enterprise_questions.jsonl",
+        "env_file": ".env.local",
+        "llm_api_key": "secret-12345",
+        "auth_token": "bearer-abc",
+        "prompt_style": None,
+        "max_items": 10,
+    }
+    sanitized = sanitize_config_args(raw_config)
+    assert "llm_api_key" not in sanitized
+    assert "auth_token" not in sanitized
+    assert "env_file" not in sanitized
+    assert "prompt_style" not in sanitized
+    assert sanitized["questions_file"] == "enterprise_questions.jsonl"
+    assert sanitized["dataset_name"] == "enterprise"
+    assert sanitized["max_items"] == 10
+
+
+def test_sanitize_config_args_negative():
+    """Verify empty dictionary or dict with all sensitive/null/env keys returns empty dict."""
+    raw_config = {
+        "llm_api_key": "secret",
+        "db_connection_string": "postgres://...",
+        "env_file": ".env",
+        "prompt_config": None,
+    }
+    sanitized = sanitize_config_args(raw_config)
+    assert sanitized == {}
 
 
 def test_compute_eval_hash_positive():
@@ -89,7 +123,10 @@ def test_job_manager_create_and_list(tmp_path: Path):
     assert job1["cached"] is False
 
     # Simulate completed job in cache
-    cm.set("hash1", {"job_id": job1["job_id"], "status": "completed", "summary": {"score": 1.0}})
+    cm.set(
+        "hash1",
+        {"job_id": job1["job_id"], "status": "completed", "summary": {"score": 1.0}},
+    )
 
     # Create job with same hash -> should return cached job
     job2 = jm.create_job("hash1", config, force_rerun=False)
@@ -123,6 +160,7 @@ def test_execute_evaluation_job_positive(mock_build_rag, mock_run_eval, tmp_path
     mock_run_eval.return_value = [{"question": "q1", "metrics": {}}]
 
     from deepeval_eval.api import EvaluationRequest, job_manager
+
     eval_hash = "exec_hash_pos"
     req = EvaluationRequest(dataset_name="enterprise", max_items=1)
     job = job_manager.create_job(eval_hash, req.model_dump(), force_rerun=True)
@@ -131,7 +169,8 @@ def test_execute_evaluation_job_positive(mock_build_rag, mock_run_eval, tmp_path
 
     updated_job = job_manager.get_job(job["job_id"])
     assert updated_job["status"] == JobStatusEnum.COMPLETED
-    assert len(updated_job["results"]) == 1
+    results = job_manager.get_job_results_payload(job["job_id"])
+    assert len(results) == 1
 
 
 @patch("deepeval_eval.api.run_evaluation", side_effect=ValueError("Eval engine error"))
@@ -139,6 +178,7 @@ def test_execute_evaluation_job_positive(mock_build_rag, mock_run_eval, tmp_path
 def test_execute_evaluation_job_negative(mock_build_rag, mock_run_eval):
     """Verify execute_evaluation_job handles failure gracefully."""
     from deepeval_eval.api import EvaluationRequest, job_manager
+
     eval_hash = "exec_hash_neg"
     req = EvaluationRequest(dataset_name="enterprise")
     job = job_manager.create_job(eval_hash, req.model_dump(), force_rerun=True)
@@ -226,7 +266,9 @@ def test_submit_eval_job_with_upload_negative_empty_file():
 def test_get_job_status_and_list():
     """Verify GET /jobs and GET /jobs/{job_id} endpoints."""
     # Submit job first
-    res_sub = client.post("/eval/jobs", json={"dataset_name": "enterprise", "force_rerun": True})
+    res_sub = client.post(
+        "/eval/jobs", json={"dataset_name": "enterprise", "force_rerun": True}
+    )
     job_id = res_sub.json()["job_id"]
 
     res_get = client.get(f"/jobs/{job_id}")
@@ -247,17 +289,23 @@ def test_get_job_status_negative_not_found():
 def test_get_job_results_negative_pending():
     """Verify GET /jobs/{job_id}/results returns 400 if job is not completed yet."""
     from deepeval_eval.api import job_manager
-    job = job_manager.create_job("hash_pending", {"dataset_name": "test"}, force_rerun=True)
+
+    job = job_manager.create_job(
+        "hash_pending", {"dataset_name": "test"}, force_rerun=True
+    )
     res = client.get(f"/jobs/{job['job_id']}/results")
     assert res.status_code == 400
 
 
 def test_get_job_results_positive_completed():
     """Verify GET /jobs/{job_id}/results returns results for completed job."""
-    from deepeval_eval.api import JobStatusEnum, job_manager
-    job = job_manager.create_job("hash_completed", {"dataset_name": "test"}, force_rerun=True)
+    from deepeval_eval.api import JobStatusEnum, cache_manager, job_manager
+
+    job = job_manager.create_job(
+        "hash_completed", {"dataset_name": "test"}, force_rerun=True
+    )
     job["status"] = JobStatusEnum.COMPLETED
-    job["results"] = [{"question": "q1"}]
+    cache_manager.save_job_payload(job["job_id"], [{"question": "q1"}])
 
     res = client.get(f"/jobs/{job['job_id']}/results")
     assert res.status_code == 200
@@ -267,13 +315,16 @@ def test_get_job_results_positive_completed():
 @patch("deepeval_eval.api.DatabaseResultSink")
 def test_save_job_results_to_db_positive(mock_sink_cls):
     """Verify POST /jobs/{job_id}/save-db calls PostgresResultSink.save."""
-    from deepeval_eval.api import JobStatusEnum, job_manager
+    from deepeval_eval.api import JobStatusEnum, cache_manager, job_manager
+
     mock_sink_instance = MagicMock()
     mock_sink_cls.return_value = mock_sink_instance
 
-    job = job_manager.create_job("hash_db_save", {"dataset_name": "test"}, force_rerun=True)
+    job = job_manager.create_job(
+        "hash_db_save", {"dataset_name": "test"}, force_rerun=True
+    )
     job["status"] = JobStatusEnum.COMPLETED
-    job["results"] = [{"question": "q1"}]
+    cache_manager.save_job_payload(job["job_id"], [{"question": "q1"}])
 
     res = client.post(f"/jobs/{job['job_id']}/save-db")
     assert res.status_code == 200
@@ -284,7 +335,10 @@ def test_save_job_results_to_db_positive(mock_sink_cls):
 def test_save_job_results_to_db_negative_not_completed():
     """Verify POST /jobs/{job_id}/save-db returns 400 for incomplete jobs."""
     from deepeval_eval.api import job_manager
-    job = job_manager.create_job("hash_db_save_neg", {"dataset_name": "test"}, force_rerun=True)
+
+    job = job_manager.create_job(
+        "hash_db_save_neg", {"dataset_name": "test"}, force_rerun=True
+    )
 
     res = client.post(f"/jobs/{job['job_id']}/save-db")
     assert res.status_code == 400
@@ -309,7 +363,9 @@ def test_query_db_evaluation_runs_positive():
         }
     ]
 
-    with patch.dict("sys.modules", {"psycopg2": mock_psycopg2, "psycopg2.extras": mock_extras}):
+    with patch.dict(
+        "sys.modules", {"psycopg2": mock_psycopg2, "psycopg2.extras": mock_extras}
+    ):
         res = client.get("/results/db?limit=5")
         assert res.status_code == 200
         data = res.json()
@@ -322,7 +378,9 @@ def test_query_db_evaluation_runs_negative():
     mock_psycopg2 = MagicMock()
     mock_psycopg2.connect.side_effect = Exception("DB Connection Error")
 
-    with patch.dict("sys.modules", {"psycopg2": mock_psycopg2, "psycopg2.extras": MagicMock()}):
+    with patch.dict(
+        "sys.modules", {"psycopg2": mock_psycopg2, "psycopg2.extras": MagicMock()}
+    ):
         res = client.get("/results/db")
         assert res.status_code == 500
         assert "DB Connection Error" in res.json()["detail"]
@@ -332,7 +390,9 @@ def test_query_db_evaluation_runs_negative():
 def test_run_server_positive(mock_uvicorn_run):
     """Verify run_server calls uvicorn.run."""
     run_server(host="127.0.0.1", port=9000)
-    mock_uvicorn_run.assert_called_once_with("deepeval_eval.api:app", host="127.0.0.1", port=9000, reload=False)
+    mock_uvicorn_run.assert_called_once_with(
+        "deepeval_eval.api:app", host="127.0.0.1", port=9000, reload=False
+    )
 
 
 def test_purge_expired_corrupted_and_unwriteable_files(tmp_path: Path):
@@ -361,7 +421,9 @@ def test_get_job_results_additional_negative_cases():
     assert res1.status_code == 404
 
     # Job failed
-    failed_job = job_manager.create_job("hash_failed", {"dataset_name": "test"}, force_rerun=True)
+    failed_job = job_manager.create_job(
+        "hash_failed", {"dataset_name": "test"}, force_rerun=True
+    )
     failed_job["status"] = JobStatusEnum.FAILED
     failed_job["error"] = "Custom error message"
 
@@ -373,14 +435,16 @@ def test_get_job_results_additional_negative_cases():
 @patch("deepeval_eval.api.DatabaseResultSink")
 def test_save_job_results_to_db_additional_negative_cases(mock_sink_cls):
     """Verify save_job_results_to_db for not found, empty results, and sink errors."""
-    from deepeval_eval.api import JobStatusEnum, job_manager
+    from deepeval_eval.api import JobStatusEnum, cache_manager, job_manager
 
     # 404 Job not found
     res1 = client.post("/jobs/non_existent_8888/save-db")
     assert res1.status_code == 404
 
     # Empty results list
-    empty_job = job_manager.create_job("hash_empty_results", {"dataset_name": "test"}, force_rerun=True)
+    empty_job = job_manager.create_job(
+        "hash_empty_results", {"dataset_name": "test"}, force_rerun=True
+    )
     empty_job["status"] = JobStatusEnum.COMPLETED
     empty_job["results"] = []
 
@@ -393,9 +457,11 @@ def test_save_job_results_to_db_additional_negative_cases(mock_sink_cls):
     mock_instance.save.side_effect = Exception("Sink write error")
     mock_sink_cls.return_value = mock_instance
 
-    valid_job = job_manager.create_job("hash_sink_err", {"dataset_name": "test"}, force_rerun=True)
+    valid_job = job_manager.create_job(
+        "hash_sink_err", {"dataset_name": "test"}, force_rerun=True
+    )
     valid_job["status"] = JobStatusEnum.COMPLETED
-    valid_job["results"] = [{"question": "q"}]
+    cache_manager.save_job_payload(valid_job["job_id"], [{"question": "q"}])
 
     res3 = client.post(f"/jobs/{valid_job['job_id']}/save-db")
     assert res3.status_code == 500
@@ -406,11 +472,16 @@ def test_submit_eval_job_with_upload_cached_positive(tmp_path: Path):
     """Verify upload endpoint returns cached job response when hash matches."""
     from deepeval_eval.api import cache_manager, job_manager
 
-    with patch("tempfile.mkdtemp", return_value=str(tmp_path)), patch("deepeval_eval.api.execute_evaluation_job"):
+    with (
+        patch("tempfile.mkdtemp", return_value=str(tmp_path)),
+        patch("deepeval_eval.api.execute_evaluation_job"),
+    ):
         file_content = b'[{"question": "What is CAIPE upload cache?"}]'
         files = {"file": ("cached_questions.json", file_content, "application/json")}
 
-        res1 = client.post("/eval/jobs/upload?dataset_name=cached_up&force_rerun=true", files=files)
+        res1 = client.post(
+            "/eval/jobs/upload?dataset_name=cached_up&force_rerun=true", files=files
+        )
         assert res1.status_code == 202
         job_id = res1.json()["job_id"]
 
@@ -420,7 +491,8 @@ def test_submit_eval_job_with_upload_cached_positive(tmp_path: Path):
         cache_manager.set(job["eval_hash"], job)
 
         # Submit second upload job with same file and config
-        res2 = client.post("/eval/jobs/upload?dataset_name=cached_up&force_rerun=false", files=files)
+        res2 = client.post(
+            "/eval/jobs/upload?dataset_name=cached_up&force_rerun=false", files=files
+        )
         assert res2.status_code == 202
         assert res2.json()["cached"] is True
-

@@ -1,29 +1,50 @@
 from __future__ import annotations
 
 import io
-from pathlib import Path
 import zipfile
+from pathlib import Path
+
 import pytest
 
 from deepeval_eval.enterprise_dataset import (
     EnterpriseDoc,
     EvalQuestion,
-    load_questions as load_enterprise_questions,
     parse_doc_filename,
+)
+from deepeval_eval.enterprise_dataset import (
+    load_questions as load_enterprise_questions,
+)
+from deepeval_eval.enterprise_dataset import (
     select_questions as select_enterprise_questions,
+)
+from deepeval_eval.enterprise_dataset import (
     to_caipe_payload as enterprise_to_caipe_payload,
+)
+from deepeval_eval.enterprise_dataset import (
     write_corpus as write_enterprise_corpus,
+)
+from deepeval_eval.enterprise_dataset import (
     write_questions as write_enterprise_questions,
 )
 from deepeval_eval.hotpotqa_dataset import (
     load_document_pool,
-    load_questions as load_hotpotqa_questions,
     read_jsonl_zip,
     resolve_zip,
-    select_documents as select_hotpotqa_documents,
-    select_questions as select_hotpotqa_questions,
-    to_caipe_payload as hotpotqa_to_caipe_payload,
     unique,
+)
+from deepeval_eval.hotpotqa_dataset import (
+    load_questions as load_hotpotqa_questions,
+)
+from deepeval_eval.hotpotqa_dataset import (
+    select_documents as select_hotpotqa_documents,
+)
+from deepeval_eval.hotpotqa_dataset import (
+    select_questions as select_hotpotqa_questions,
+)
+from deepeval_eval.hotpotqa_dataset import (
+    to_caipe_payload as hotpotqa_to_caipe_payload,
+)
+from deepeval_eval.hotpotqa_dataset import (
     write_questions as write_hotpotqa_questions,
 )
 
@@ -39,26 +60,35 @@ def test_parse_doc_filename_negative() -> None:
     assert parse_doc_filename("dsid_123__test.doc") is None
 
 
-def test_enterprise_questions_positive(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_enterprise_questions_positive(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     cache_dir = tmp_path / "cache"
     questions_jsonl = (
         '{"question_id": "q1", "user_input": "What is X?", "reference": "X is Y", "category": "cat1", "source_types": ["slack"], "expected_doc_ids": ["doc1"]}\n'
         '{"question_id": "q2", "question": "Where is Z?", "gold_answer": "Z is here", "question_type": "cat2", "source_types": ["jira"], "expected_doc_ids": ["doc2"]}\n'
     )
-    monkeypatch.setattr("deepeval_eval.enterprise_dataset.download_text", lambda url, dest: questions_jsonl)
+    monkeypatch.setattr(
+        "deepeval_eval.enterprise_dataset.download_text",
+        lambda url, dest: questions_jsonl,
+    )
 
     q_list = load_enterprise_questions(cache_dir)
     assert len(q_list) == 2
     assert q_list[0].question_id == "q1"
     assert q_list[1].user_input == "Where is Z?"
 
-    selected = select_enterprise_questions(q_list, source_types=["slack"], question_limit=1, questions_per_category=1)
+    selected = select_enterprise_questions(
+        q_list, source_types=["slack"], question_limit=1, questions_per_category=1
+    )
     assert len(selected) == 1
     assert selected[0].question_id == "q1"
 
 
 def test_enterprise_to_caipe_payload() -> None:
-    doc = EnterpriseDoc(doc_id="d1", title="Title", text="Body text", source_type="slack")
+    doc = EnterpriseDoc(
+        doc_id="d1", title="Title", text="Body text", source_type="slack"
+    )
     payload = enterprise_to_caipe_payload(doc, datasource_id="ds1", ingestor_id="ing1")
     assert payload["page_content"] == "Body text"
     assert payload["metadata"]["document_id"] == "d1"
@@ -69,18 +99,33 @@ def test_fetch_documents(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
 
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
-        zf.writestr("slack_slice_0001/dsid_doc999__first-doc.txt", "Doc Title\nBody text content")
+        zf.writestr(
+            "slack_slice_0001/dsid_doc999__first-doc.txt",
+            "Doc Title\nBody text content",
+        )
 
-    monkeypatch.setattr("deepeval_eval.enterprise_dataset.download_bytes", lambda url, dest: buf.getvalue())
-    monkeypatch.setattr("deepeval_eval.enterprise_dataset.SOURCE_SLICE_COUNTS", {"slack": 1})
+    monkeypatch.setattr(
+        "deepeval_eval.enterprise_dataset.download_bytes",
+        lambda url, dest: buf.getvalue(),
+    )
+    monkeypatch.setattr(
+        "deepeval_eval.enterprise_dataset.SOURCE_SLICE_COUNTS", {"slack": 1}
+    )
 
-    docs = fetch_documents(source_types=["slack"], limit_per_source=5, cache_dir=tmp_path, reference_doc_ids={"dsid_doc999"})
+    docs = fetch_documents(
+        source_types=["slack"],
+        limit_per_source=5,
+        cache_dir=tmp_path,
+        reference_doc_ids={"dsid_doc999"},
+    )
     assert len(docs) == 1
     assert docs[0].doc_id == "dsid_doc999"
 
 
 def test_write_enterprise_files(tmp_path: Path) -> None:
-    doc = EnterpriseDoc(doc_id="d1", title="Title", text="Body text", source_type="slack")
+    doc = EnterpriseDoc(
+        doc_id="d1", title="Title", text="Body text", source_type="slack"
+    )
     q = EvalQuestion(
         question_id="q1",
         user_input="Input",
@@ -110,9 +155,7 @@ def test_hotpotqa_dataset_helpers(tmp_path: Path) -> None:
     zip_path = tmp_path / "data.zip"
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
-        jsonl_data = (
-            '{"question_id": "hq1", "user_input": "What?", "reference": "Ans", "category": "catA", "expected_doc_ids": ["docA"]}\n'
-        )
+        jsonl_data = '{"question_id": "hq1", "user_input": "What?", "reference": "Ans", "category": "catA", "expected_doc_ids": ["docA"]}\n'
         zf.writestr("items.jsonl", jsonl_data)
     zip_path.write_bytes(buf.getvalue())
 
@@ -127,12 +170,16 @@ def test_hotpotqa_dataset_helpers(tmp_path: Path) -> None:
     assert len(questions) == 1
     assert questions[0]["question_id"] == "hq1"
 
-    selected_q = select_hotpotqa_questions(questions, limit=1, per_category=1, categories=None)
+    selected_q = select_hotpotqa_questions(
+        questions, limit=1, per_category=1, categories=None
+    )
     assert len(selected_q) == 1
 
     pool_buf = io.BytesIO()
     with zipfile.ZipFile(pool_buf, "w") as zf:
-        doc_jsonl = '{"document_id": "docA", "title": "Doc A", "content": "Sample content"}\n'
+        doc_jsonl = (
+            '{"document_id": "docA", "title": "Doc A", "content": "Sample content"}\n'
+        )
         zf.writestr("docs.jsonl", doc_jsonl)
     pool_zip = tmp_path / "pool.zip"
     pool_zip.write_bytes(pool_buf.getvalue())
@@ -140,7 +187,9 @@ def test_hotpotqa_dataset_helpers(tmp_path: Path) -> None:
     doc_pool = load_document_pool(pool_zip)
     assert "docA" in doc_pool
 
-    selected_docs = select_hotpotqa_documents(questions, doc_pool, distractors_per_question=1, max_docs=5)
+    selected_docs = select_hotpotqa_documents(
+        questions, doc_pool, distractors_per_question=1, max_docs=5
+    )
     assert len(selected_docs) == 1
     assert selected_docs[0]["document_id"] == "docA"
 
@@ -152,8 +201,10 @@ def test_hotpotqa_dataset_helpers(tmp_path: Path) -> None:
     write_hotpotqa_questions(questions, doc_pool, q_j, q_c)
     assert q_j.exists() and q_c.exists()
 
+
 def test_hotpotqa_fallbacks() -> None:
-    from deepeval_eval.hotpotqa_dataset import select_questions, select_documents
+    from deepeval_eval.hotpotqa_dataset import select_documents, select_questions
+
     questions = [
         {"question_id": "q1", "category": "cat1", "expected_doc_ids": ["d1"]},
         {"question_id": "q2", "category": "cat1", "expected_doc_ids": ["d2"]},
@@ -172,8 +223,12 @@ def test_hotpotqa_fallbacks() -> None:
     assert len(sel_d) == 3
 
 
-def test_hotpotqa_resolve_zip_negative(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_hotpotqa_resolve_zip_negative(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     non_existent = tmp_path / "non_existent.zip"
-    monkeypatch.setattr("deepeval_eval.hotpotqa_dataset.DEFAULT_DOWNLOADS_DIR", tmp_path / "downloads")
+    monkeypatch.setattr(
+        "deepeval_eval.hotpotqa_dataset.DEFAULT_DOWNLOADS_DIR", tmp_path / "downloads"
+    )
     with pytest.raises(FileNotFoundError):
         resolve_zip(non_existent, "fallback.zip")

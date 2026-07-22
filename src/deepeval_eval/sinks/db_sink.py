@@ -4,13 +4,13 @@ import json
 import os
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 
 class DatabaseResultSink:
     """Persists evaluation run directly to PostgreSQL tables (batches, runs, eval_results)."""
 
-    def __init__(self, connection_string: Optional[str] = None):
+    def __init__(self, connection_string: str | None = None):
         self.connection_string = connection_string
 
     def _get_connection(self) -> Any:
@@ -96,7 +96,9 @@ class DatabaseResultSink:
             return
 
         batch_id = config_args.get("batch_id") or f"batch_{time.strftime('%Y%m%d')}"
-        run_id = config_args.get("run_id") or f"{prefix}_{time.strftime('%Y%m%d-%H%M%S')}"
+        run_id = (
+            config_args.get("run_id") or f"{prefix}_{time.strftime('%Y%m%d-%H%M%S')}"
+        )
         config_name = config_args.get("config_name") or prefix
 
         try:
@@ -147,7 +149,9 @@ class DatabaseResultSink:
                 template="(%s, %s, %s, %s::jsonb)",
             )
             conn.commit()
-            print(f"Successfully persisted run '{run_id}' ({len(results)} rows) to Postgres DB.")
+            print(
+                f"Successfully persisted run '{run_id}' ({len(results)} rows) to Postgres DB."
+            )
         except Exception as exc:
             conn.rollback()
             print(f"Failed to insert eval results into database: {exc}")

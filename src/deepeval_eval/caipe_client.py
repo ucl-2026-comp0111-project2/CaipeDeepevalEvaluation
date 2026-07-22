@@ -1,11 +1,15 @@
 from __future__ import annotations
 
-import requests
 import time
 from typing import Any
 
+import requests
+
 from deepeval_eval.prompt_style import PromptStyle, build_prompt
-from deepeval_eval.rag_client import BaseRagClient, RagQueryResult  # Re-exported for backward compatibility
+from deepeval_eval.rag_client import (
+    BaseRagClient,
+    RagQueryResult,
+)  # Re-exported for backward compatibility
 
 
 def check_response(resp: requests.Response) -> requests.Response:
@@ -283,13 +287,16 @@ def extract_contexts_and_sources(
 
 def build_caipe_client(env_values: dict[str, Any]) -> CaipeRagClient:
     """Helper to instantiate CaipeRagClient from environment dict."""
+
     def _environ_get(key: str, default: str | None = None) -> str | None:
         return env_values.get(key) or default
 
     return CaipeRagClient(
-        base_url=_environ_get("CAIPE_BASE_URL", "https://caipe.homelab/api/rag-server") or "https://caipe.homelab/api/rag-server",
+        base_url=_environ_get("CAIPE_BASE_URL", "https://caipe.homelab/api/rag-server")
+        or "https://caipe.homelab/api/rag-server",
         token=_environ_get("CAIPE_AUTH_TOKEN") or _environ_get("AUTH_TOKEN"),
-        verify=(_environ_get("INSECURE_SSL", "false") or "false").lower() not in ("true", "1", "yes"),
+        verify=(_environ_get("INSECURE_SSL", "false") or "false").lower()
+        not in ("true", "1", "yes"),
         keycloak_url=_environ_get(
             "KEYCLOAK_URL",
             "https://keycloak.caipe.homelab/realms/caipe/protocol/openid-connect/token",
@@ -297,4 +304,3 @@ def build_caipe_client(env_values: dict[str, Any]) -> CaipeRagClient:
         client_id=_environ_get("CAIPE_CLIENT_ID"),
         client_secret=_environ_get("CAIPE_CLIENT_SECRET"),
     )
-

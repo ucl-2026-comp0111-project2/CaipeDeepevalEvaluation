@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Optional, Sequence
+from typing import Any, Optional
 
 from deepeval_eval.sinks.composite_sink import CompositeResultSink
 from deepeval_eval.sinks.db_sink import DatabaseResultSink
@@ -21,7 +22,7 @@ def write_evaluation_results(
     results: list[dict[str, Any]],
     evaluation_time: float,
     config_args: dict[str, Any],
-    sinks: Optional[Sequence[ResultSink]] = None,
+    sinks: Sequence[ResultSink] | None = None,
 ) -> None:
     """Save results using the provided sinks (defaults to FileResultSink)."""
     if sinks is None:

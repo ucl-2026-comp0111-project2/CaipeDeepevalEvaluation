@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
     from deepeval.test_case import LLMTestCase
@@ -26,17 +26,13 @@ class EvaluatorMetric(Protocol):
     """Pure structural protocol contract for all evaluation metrics (deterministic and LLM-evaluated)."""
 
     name: str
-    score: Optional[float]
-    reason: Optional[str]
-    success: Optional[bool]
+    score: float | None
+    reason: str | None
+    success: bool | None
     threshold: float
 
-    def measure(self, test_case: LLMTestCase) -> float:
-        ...
+    def measure(self, test_case: LLMTestCase) -> float: ...
 
-    def get_reason(self) -> str:
-        ...
+    def get_reason(self) -> str: ...
 
-    def is_successful(self) -> bool:
-        ...
-
+    def is_successful(self) -> bool: ...

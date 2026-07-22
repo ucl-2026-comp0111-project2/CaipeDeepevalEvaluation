@@ -1,7 +1,24 @@
 import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-from deepeval_eval.io_utils import load_eval_questions, download_text, download_bytes
+
+from deepeval_eval.io_utils import (
+    download_bytes,
+    download_text,
+    load_eval_questions,
+    sanitize_path,
+)
+
+
+def test_sanitize_path() -> None:
+    """Verify sanitize_path strips parent directories, relative paths, and trailing slashes."""
+    assert sanitize_path(None) is None
+    assert sanitize_path(123) == 123  # Non-string passes through
+    assert sanitize_path("") == ""
+    assert sanitize_path("/etc/passwd") == "passwd"
+    assert sanitize_path("/var/log/results/") == "results"
+    assert sanitize_path("data/subfolder/questions.jsonl") == "questions.jsonl"
+    assert sanitize_path("simple_filename.csv") == "simple_filename.csv"
 
 
 def test_download_text_positive(tmp_path: Path) -> None:
@@ -42,7 +59,9 @@ def test_load_eval_questions_category_limit(tmp_path: Path) -> None:
         '{"category": "cat1", "level": "hard"}\n'
     )
 
-    rows = load_eval_questions(jsonl_path, max_items=None, limit_per_category=1, combine_with_level=True)
+    rows = load_eval_questions(
+        jsonl_path, max_items=None, limit_per_category=1, combine_with_level=True
+    )
     assert len(rows) == 2  # 1 for cat1-easy, 1 for cat1-hard
 
 
@@ -112,18 +131,23 @@ def test_load_eval_questions_combine_with_level(tmp_path: Path):
             f.write(json.dumps(item) + "\n")
 
     # With combine_with_level=False, we only get q1 (limit_per_category=1)
-    rows_default = load_eval_questions(questions_file, max_items=None, limit_per_category=1, combine_with_level=False)
+    rows_default = load_eval_questions(
+        questions_file, max_items=None, limit_per_category=1, combine_with_level=False
+    )
     assert len(rows_default) == 1
     assert rows_default[0]["user_input"] == "q1"
 
     # With combine_with_level=True, we get q1 (easy) and q3 (hard)
-    rows_combined = load_eval_questions(questions_file, max_items=None, limit_per_category=1, combine_with_level=True)
+    rows_combined = load_eval_questions(
+        questions_file, max_items=None, limit_per_category=1, combine_with_level=True
+    )
     assert len(rows_combined) == 2
     assert [r["user_input"] for r in rows_combined] == ["q1", "q3"]
 
 
 def test_parse_indices():
     from deepeval_eval.enterprise_deepeval import parse_indices
+
     # Basic list
     assert parse_indices("1,2,5", 10) == {1, 2, 5}
     # Ranges
@@ -136,6 +160,7 @@ def test_parse_indices():
 
 def test_question_filtering_logic(tmp_path: Path):
     from deepeval_eval.enterprise_deepeval import parse_indices
+
     questions_file = tmp_path / "filter_questions.jsonl"
     data = [
         {"question_id": "q_1", "user_input": "query 1", "category": "cat1"},
@@ -160,14 +185,16 @@ def test_question_filtering_logic(tmp_path: Path):
     args_a = MockArgs(q_ids="q_2,q_4", limit_cat=1)
     if args_a.question_ids:
         rows = load_eval_questions(args_a.questions_file, None, None)
-        target_ids = {qid.strip() for qid in args_a.question_ids.split(',')}
-        rows = [row for row in rows if str(row.get('question_id')) in target_ids]
+        target_ids = {qid.strip() for qid in args_a.question_ids.split(",")}
+        rows = [row for row in rows if str(row.get("question_id")) in target_ids]
     assert len(rows) == 2
     assert {r["question_id"] for r in rows} == {"q_2", "q_4"}
 
     # Case B: Filter by question_indices -> should respect limit_per_category
     args_b = MockArgs(q_indices="2", limit_cat=1)
-    rows = load_eval_questions(args_b.questions_file, args_b.max_items, args_b.limit_per_category)
+    rows = load_eval_questions(
+        args_b.questions_file, args_b.max_items, args_b.limit_per_category
+    )
     # limit_per_category=1 means we load:
     # - q_1 (from cat1)
     # - q_3 (from cat2)
@@ -179,5 +206,3 @@ def test_question_filtering_logic(tmp_path: Path):
     filtered_rows = [rows[i - 1] for i in sorted(target_indices) if 1 <= i <= len(rows)]
     assert len(filtered_rows) == 1
     assert filtered_rows[0]["question_id"] == "q_3"
-
-

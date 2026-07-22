@@ -5,7 +5,7 @@ import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from deepeval_eval.config import (
     DEFAULT_DATA_DIR,
@@ -17,8 +17,10 @@ from deepeval_eval.config import (
     resolve_llm_settings,
 )
 from deepeval_eval.data_loader import BaseDataLoader, FileDataLoader
+from deepeval_eval.io_utils import sanitize_path
 from deepeval_eval.llm_client import DeepEvalJudge, OpenAICompatibleClient
 from deepeval_eval.metrics import build_metrics, doc_id_scores
+from deepeval_eval.prompt_style import DEFAULT_PROMPT_STYLE
 from deepeval_eval.sinks import (
     DatabaseResultSink,
     FileResultSink,
@@ -29,39 +31,38 @@ from deepeval_eval.sinks import (
 logger = logging.getLogger(__name__)
 
 
-
 @dataclass
 class EvalConfig:
     dataset_name: str = "enterprise"
     answer_mode: str = "reference"
-    datasource_id: Optional[str] = None
+    datasource_id: str | None = None
     data_dir: Path = field(default_factory=lambda: DEFAULT_DATA_DIR)
-    questions_file: Optional[Path] = None
-    prompt_style: Optional[str] = None
-    prompt_config: Optional[Path] = None
-    combine_with_level: Optional[bool] = None
-    max_items: Optional[int] = None
-    limit_per_category: Optional[int] = None
+    questions_file: Path | None = None
+    prompt_style: str | None = DEFAULT_PROMPT_STYLE
+    prompt_config: Path | None = None
+    combine_with_level: bool | None = None
+    max_items: int | None = None
+    limit_per_category: int | None = None
     top_k: int = 3
     max_context_chars: int = 12000
-    llm_base_url: Optional[str] = None
-    llm_api_key: Optional[str] = None
-    llm_model: Optional[str] = None
+    llm_base_url: str | None = None
+    llm_api_key: str | None = None
+    llm_model: str | None = None
     agentic: bool = False
-    supervisor_url: str = "http://localhost:8000"
+    supervisor_url: str | None = None
     fail_on_error: bool = False
     precompute: bool = False
     gate: bool = False
     gate_config: Path = field(default_factory=lambda: DEFAULT_GATE_CONFIG)
     env_file: Path = field(default_factory=lambda: DEFAULT_ENV_FILE)
     results_dir: Path = field(default_factory=lambda: DEFAULT_RESULTS_DIR)
-    question_ids: Optional[str] = None
-    question_indices: Optional[str] = None
-    batch_id: Optional[str] = None
-    run_id: Optional[str] = None
-    config_name: Optional[str] = None
+    question_ids: str | None = None
+    question_indices: str | None = None
+    batch_id: str | None = None
+    run_id: str | None = None
+    config_name: str | None = None
     save_to_db: bool = False
-    db_connection_string: Optional[str] = None
+    db_connection_string: str | None = None
 
     def to_config_args(self) -> dict[str, Any]:
         """Convert dataclass fields to serializable configuration dictionary."""
@@ -84,18 +85,31 @@ def _build_rag_client(config: EvalConfig, env_values: dict[str, Any]) -> Any:
     """Factory function to build the appropriate RAG client for the evaluation run."""
     from deepeval_eval.caipe_client import build_caipe_client
 
-    if config.precompute:
+    supervisor_url = (
+        getattr(config, "supervisor_url", None)
+        or env_values.get("CAIPE_SUPERVISOR_URL")
+        or env_values.get("SUPERVISOR_URL")
+        or __import__("os").getenv("CAIPE_SUPERVISOR_URL")
+        or "http://localhost:8000"
+    )
+
+    datasource_id = getattr(config, "datasource_id", None)
+    if datasource_id:
+        __import__("os").environ["CAIPE_DATASOURCE_ID"] = datasource_id
+
+    if getattr(config, "precompute", False):
         from deepeval_eval.precomputed_client import PrecomputedRagClient
 
         caipe_client = build_caipe_client(env_values)
         return PrecomputedRagClient(caipe_client)
-    elif config.agentic:
+    elif getattr(config, "agentic", False):
         from deepeval_eval.rag_client import AgenticRagAdapter
 
         return AgenticRagAdapter(
-            supervisor_url=config.supervisor_url,
-            results_dir=config.results_dir,
-            fail_on_error=config.fail_on_error,
+            supervisor_url=supervisor_url,
+            results_dir=getattr(config, "results_dir", None),
+            fail_on_error=getattr(config, "fail_on_error", False),
+            datasource_id=datasource_id,
         )
     else:
         return build_caipe_client(env_values)
@@ -103,9 +117,9 @@ def _build_rag_client(config: EvalConfig, env_values: dict[str, Any]) -> Any:
 
 def run_evaluation(
     config: EvalConfig,
-    data_loader: Optional[BaseDataLoader] = None,
-    rag_client: Optional[Any] = None,
-    metrics: Optional[list[Any]] = None,
+    data_loader: BaseDataLoader | None = None,
+    rag_client: Any | None = None,
+    metrics: list[Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Execute evaluation run according to EvalConfig settings."""
     ensure_dirs(config.results_dir)
@@ -202,7 +216,9 @@ def run_evaluation(
         answer = query_res.answer
         trimmed_contexts = query_res.contexts
         sources = query_res.sources
-        current_retrieved_ids = query_res.retrieved_doc_ids or row.get("retrieved_doc_ids", [])
+        current_retrieved_ids = query_res.retrieved_doc_ids or row.get(
+            "retrieved_doc_ids", []
+        )
 
         test_case = LLMTestCase(
             input=question,
@@ -247,13 +263,17 @@ def run_evaluation(
                 }
 
         recall_score = metric_results.get("RetrievalRecallMetric", {}).get("score")
-        precision_score = metric_results.get("RetrievalPrecisionMetric", {}).get("score")
+        precision_score = metric_results.get("RetrievalPrecisionMetric", {}).get(
+            "score"
+        )
         if recall_score is None or precision_score is None:
             fallback_recall, fallback_precision = doc_id_scores(
                 sources, list(row.get("expected_doc_ids") or [])
             )
             doc_recall = recall_score if recall_score is not None else fallback_recall
-            doc_precision = precision_score if precision_score is not None else fallback_precision
+            doc_precision = (
+                precision_score if precision_score is not None else fallback_precision
+            )
         else:
             doc_recall = recall_score
             doc_precision = precision_score
@@ -283,8 +303,7 @@ def run_evaluation(
                 "evaluator_output_tokens": llm_client.output_tokens,
                 "evaluator_total_tokens": llm_client.total_tokens,
                 "latency": query_res.latency_sec,
-                "latency_ms": query_res.latency_ms,
-                "log_file": query_res.log_file,
+                "log_file": sanitize_path(query_res.log_file),
             }
         )
 

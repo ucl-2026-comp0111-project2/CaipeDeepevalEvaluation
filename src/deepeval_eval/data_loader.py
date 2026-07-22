@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from deepeval_eval.config import DEFAULT_DATA_DIR
 
@@ -18,7 +18,9 @@ def resolve_questions_file(
         resolved = Path(questions_file)
         if resolved.exists():
             return resolved
-        raise FileNotFoundError(f"Specified questions file does not exist: {questions_file}")
+        raise FileNotFoundError(
+            f"Specified questions file does not exist: {questions_file}"
+        )
 
     candidates = [
         data_dir / f"{dataset_name}_deepeval_questions.jsonl",
@@ -43,8 +45,8 @@ class BaseDataLoader(ABC):
     @abstractmethod
     def load(
         self,
-        max_items: Optional[int] = None,
-        limit_per_category: Optional[int] = None,
+        max_items: int | None = None,
+        limit_per_category: int | None = None,
         combine_with_level: bool = False,
     ) -> list[dict[str, Any]]:
         """Load evaluation questions as a list of dictionaries."""
@@ -56,7 +58,7 @@ class FileDataLoader(BaseDataLoader):
 
     def __init__(
         self,
-        questions_file: Optional[Path] = None,
+        questions_file: Path | None = None,
         dataset_name: str = "enterprise",
         data_dir: Path = DEFAULT_DATA_DIR,
     ) -> None:
@@ -73,8 +75,8 @@ class FileDataLoader(BaseDataLoader):
 
     def load(
         self,
-        max_items: Optional[int] = None,
-        limit_per_category: Optional[int] = None,
+        max_items: int | None = None,
+        limit_per_category: int | None = None,
         combine_with_level: bool = False,
     ) -> list[dict[str, Any]]:
         path = self.resolve_file()
@@ -114,7 +116,9 @@ class FileDataLoader(BaseDataLoader):
                     if max_items and len(rows) >= max_items:
                         break
         else:
-            raise ValueError(f"Unsupported file format for evaluation questions: {path.suffix}")
+            raise ValueError(
+                f"Unsupported file format for evaluation questions: {path.suffix}"
+            )
 
         return rows
 
@@ -127,8 +131,8 @@ class InMemoryDataLoader(BaseDataLoader):
 
     def load(
         self,
-        max_items: Optional[int] = None,
-        limit_per_category: Optional[int] = None,
+        max_items: int | None = None,
+        limit_per_category: int | None = None,
         combine_with_level: bool = False,
     ) -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []
@@ -153,7 +157,7 @@ class DatabaseDataLoader(BaseDataLoader):
 
     def __init__(
         self,
-        connection_string: Optional[str] = None,
+        connection_string: str | None = None,
         table_or_collection: str = "eval_questions",
     ) -> None:
         self.connection_string = connection_string
@@ -161,10 +165,12 @@ class DatabaseDataLoader(BaseDataLoader):
 
     def load(
         self,
-        max_items: Optional[int] = None,
-        limit_per_category: Optional[int] = None,
+        max_items: int | None = None,
+        limit_per_category: int | None = None,
         combine_with_level: bool = False,
     ) -> list[dict[str, Any]]:
         if not self.connection_string:
             raise ValueError("connection_string is required for DatabaseDataLoader")
-        raise NotImplementedError("DatabaseDataLoader query execution requires active DB connection.")
+        raise NotImplementedError(
+            "DatabaseDataLoader query execution requires active DB connection."
+        )

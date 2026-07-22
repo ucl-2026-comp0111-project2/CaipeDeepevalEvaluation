@@ -30,7 +30,11 @@ from deepeval_eval.llm_client import (
 def build_gold_sources(row: dict[str, Any]) -> list[dict[str, Any]]:
     expected_doc_ids = list(row.get("expected_doc_ids") or [])
     source_types = list(row.get("source_types") or [])
-    source_type = source_types[0] if source_types else (row.get("dataset_name") or row.get("benchmark"))
+    source_type = (
+        source_types[0]
+        if source_types
+        else (row.get("dataset_name") or row.get("benchmark"))
+    )
     return [
         {
             "document_id": doc_id,
@@ -78,7 +82,9 @@ def make_answer(
 ) -> str:
     if args.answer_mode == "reference":
         return reference
-    ds_name = getattr(args, "dataset_name", None) or getattr(args, "benchmark", "hotpotqa")
+    ds_name = getattr(args, "dataset_name", None) or getattr(
+        args, "benchmark", "hotpotqa"
+    )
     prompt_style = getattr(args, "prompt_style", None)
     if prompt_style == "short" or (prompt_style is None and ds_name == "hotpotqa"):
         return str(llm_client.generate(make_short_answer_prompt(question, contexts)))

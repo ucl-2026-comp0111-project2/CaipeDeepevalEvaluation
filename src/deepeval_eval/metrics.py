@@ -3,17 +3,18 @@ from __future__ import annotations
 import math
 import re
 import string
-from typing import Any, Optional
-from deepeval.metrics import BaseMetric, GEval
-from deepeval.test_case import LLMTestCase, SingleTurnParams
+from typing import Any
 
 from deepeval.metrics import (
     AnswerRelevancyMetric,
+    BaseMetric,
     ContextualPrecisionMetric,
     ContextualRecallMetric,
     ContextualRelevancyMetric,
     FaithfulnessMetric,
+    GEval,
 )
+from deepeval.test_case import LLMTestCase, SingleTurnParams
 from pydantic.alias_generators import to_snake
 
 
@@ -90,12 +91,14 @@ class NormalizedExactMatchMetric(BaseMetric):
     Evaluates whether normalized actual output matches normalized expected output.
     """
 
-    def __init__(self, name: str = "NormalizedExactMatchMetric", threshold: float = 0.5, **kwargs):
+    def __init__(
+        self, name: str = "NormalizedExactMatchMetric", threshold: float = 0.5, **kwargs
+    ):
         self.name = name
         self.threshold = threshold
-        self.score: Optional[float] = 0.0
-        self.reason: Optional[str] = None
-        self.success: Optional[bool] = None
+        self.score: float | None = 0.0
+        self.reason: str | None = None
+        self.success: bool | None = None
 
     def measure(self, test_case: LLMTestCase) -> float:
         actual = test_case.actual_output or ""
@@ -110,7 +113,11 @@ class NormalizedExactMatchMetric(BaseMetric):
         return self.reason or f"Exact match score: {(self.score or 0.0):.4f}"
 
     def is_successful(self) -> bool:
-        return bool(self.success if self.success is not None else (self.score is not None and self.score >= self.threshold))
+        return bool(
+            self.success
+            if self.success is not None
+            else (self.score is not None and self.score >= self.threshold)
+        )
 
 
 class ContainsReferenceMetric(BaseMetric):
@@ -119,12 +126,14 @@ class ContainsReferenceMetric(BaseMetric):
     Evaluates whether normalized expected output (reference) is contained within actual output.
     """
 
-    def __init__(self, name: str = "ContainsReferenceMetric", threshold: float = 0.5, **kwargs):
+    def __init__(
+        self, name: str = "ContainsReferenceMetric", threshold: float = 0.5, **kwargs
+    ):
         self.name = name
         self.threshold = threshold
-        self.score: Optional[float] = 0.0
-        self.reason: Optional[str] = None
-        self.success: Optional[bool] = None
+        self.score: float | None = 0.0
+        self.reason: str | None = None
+        self.success: bool | None = None
 
     def measure(self, test_case: LLMTestCase) -> float:
         actual = test_case.actual_output or ""
@@ -139,7 +148,11 @@ class ContainsReferenceMetric(BaseMetric):
         return self.reason or f"Contains reference score: {(self.score or 0.0):.4f}"
 
     def is_successful(self) -> bool:
-        return bool(self.success if self.success is not None else (self.score is not None and self.score >= self.threshold))
+        return bool(
+            self.success
+            if self.success is not None
+            else (self.score is not None and self.score >= self.threshold)
+        )
 
 
 class AnswerCorrectnessMetric(BaseMetric):
@@ -148,10 +161,16 @@ class AnswerCorrectnessMetric(BaseMetric):
     Evaluates generated output factual alignment against the ground truth reference.
     """
 
-    def __init__(self, name: str = "AnswerCorrectnessMetric", model: Any = None, threshold: float = 0.5, **kwargs):
+    def __init__(
+        self,
+        name: str = "AnswerCorrectnessMetric",
+        model: Any = None,
+        threshold: float = 0.5,
+        **kwargs,
+    ):
         self.name = name
         self.threshold = threshold
-        
+
         self.geval_judge = GEval(
             name=name,
             model=model,
@@ -159,18 +178,18 @@ class AnswerCorrectnessMetric(BaseMetric):
             verbose_mode=kwargs.get("verbose_mode", False),
             async_mode=kwargs.get("async_mode", False),
             evaluation_params=[
-                SingleTurnParams.ACTUAL_OUTPUT, 
-                SingleTurnParams.EXPECTED_OUTPUT
+                SingleTurnParams.ACTUAL_OUTPUT,
+                SingleTurnParams.EXPECTED_OUTPUT,
             ],
             evaluation_steps=[
                 "Compare the actual output directly with the expected output to verify factual accuracy.",
                 "Check if all elements mentioned in the expected output are present and correctly represented in the actual output.",
-                "Assess if there are any discrepancies in details, values, or information between the actual and expected outputs."
-            ]
+                "Assess if there are any discrepancies in details, values, or information between the actual and expected outputs.",
+            ],
         )
-        self.score: Optional[float] = 0.0
-        self.reason: Optional[str] = ""
-        self.success: Optional[bool] = False
+        self.score: float | None = 0.0
+        self.reason: str | None = ""
+        self.success: bool | None = False
 
     def measure(self, test_case: LLMTestCase) -> float:
         self.score = self.geval_judge.measure(test_case)
@@ -194,9 +213,9 @@ class MRRMetric(BaseMetric):
     def __init__(self, name: str = "MRR", threshold: float = 0.5, **kwargs):
         self.name = name
         self.threshold = threshold
-        self.score: Optional[float] = 0.0
-        self.reason: Optional[str] = None
-        self.success: Optional[bool] = None
+        self.score: float | None = 0.0
+        self.reason: str | None = None
+        self.success: bool | None = None
 
     def measure(self, test_case: LLMTestCase) -> float:
         metadata = test_case.metadata or {}
@@ -212,7 +231,9 @@ class MRRMetric(BaseMetric):
         for rank, doc_id in enumerate(retrieved_ids, start=1):
             if doc_id in expected_ids:
                 self.score = 1.0 / rank
-                self.reason = f"Deterministic MRR ranking quality score: {self.score:.4f}"
+                self.reason = (
+                    f"Deterministic MRR ranking quality score: {self.score:.4f}"
+                )
                 self.success = self.score >= self.threshold
                 return self.score
 
@@ -222,10 +243,17 @@ class MRRMetric(BaseMetric):
         return self.score
 
     def get_reason(self) -> str:
-        return self.reason or f"Deterministic MRR ranking quality score: {(self.score or 0.0):.4f}"
+        return (
+            self.reason
+            or f"Deterministic MRR ranking quality score: {(self.score or 0.0):.4f}"
+        )
 
     def is_successful(self) -> bool:
-        return bool(self.success if self.success is not None else (self.score is not None and self.score >= self.threshold))
+        return bool(
+            self.success
+            if self.success is not None
+            else (self.score is not None and self.score >= self.threshold)
+        )
 
 
 class NDCGAtKMetric(BaseMetric):
@@ -234,13 +262,15 @@ class NDCGAtKMetric(BaseMetric):
     Evaluates positional weighting distributions for multi-document retrieval.
     """
 
-    def __init__(self, name: str = "nDCG@k", k: int = 5, threshold: float = 0.5, **kwargs):
+    def __init__(
+        self, name: str = "nDCG@k", k: int = 5, threshold: float = 0.5, **kwargs
+    ):
         self.name = name
         self.k = k
         self.threshold = threshold
-        self.score: Optional[float] = 0.0
-        self.reason: Optional[str] = None
-        self.success: Optional[bool] = None
+        self.score: float | None = 0.0
+        self.reason: str | None = None
+        self.success: bool | None = None
 
     def measure(self, test_case: LLMTestCase) -> float:
         metadata = test_case.metadata or {}
@@ -249,30 +279,47 @@ class NDCGAtKMetric(BaseMetric):
 
         if not expected_ids or not retrieved_ids:
             self.score = 0.0
-            self.reason = f"Deterministic nDCG@{self.k} ranking quality score: {self.score:.4f}"
+            self.reason = (
+                f"Deterministic nDCG@{self.k} ranking quality score: {self.score:.4f}"
+            )
             self.success = self.score >= self.threshold
             return self.score
 
         retrieved_k = retrieved_ids[: self.k]
-        dcg = sum((1.0 / math.log2(i + 2)) for i, doc_id in enumerate(retrieved_k) if doc_id in expected_ids)
+        dcg = sum(
+            (1.0 / math.log2(i + 2))
+            for i, doc_id in enumerate(retrieved_k)
+            if doc_id in expected_ids
+        )
         if math.isclose(dcg, 0.0):
             self.score = 0.0
-            self.reason = f"Deterministic nDCG@{self.k} ranking quality score: {self.score:.4f}"
+            self.reason = (
+                f"Deterministic nDCG@{self.k} ranking quality score: {self.score:.4f}"
+            )
             self.success = self.score >= self.threshold
             return self.score
 
         ideal_hits = min(len(expected_ids), self.k)
         idcg = sum((1.0 / math.log2(i + 2)) for i in range(ideal_hits))
         self.score = dcg / idcg if idcg > 0.0 else 0.0
-        self.reason = f"Deterministic nDCG@{self.k} ranking quality score: {self.score:.4f}"
+        self.reason = (
+            f"Deterministic nDCG@{self.k} ranking quality score: {self.score:.4f}"
+        )
         self.success = self.score >= self.threshold
         return self.score
 
     def get_reason(self) -> str:
-        return self.reason or f"Deterministic nDCG@{self.k} ranking quality score: {(self.score or 0.0):.4f}"
+        return (
+            self.reason
+            or f"Deterministic nDCG@{self.k} ranking quality score: {(self.score or 0.0):.4f}"
+        )
 
     def is_successful(self) -> bool:
-        return bool(self.success if self.success is not None else (self.score is not None and self.score >= self.threshold))
+        return bool(
+            self.success
+            if self.success is not None
+            else (self.score is not None and self.score >= self.threshold)
+        )
 
 
 class RetrievalRecallMetric(BaseMetric):
@@ -281,12 +328,14 @@ class RetrievalRecallMetric(BaseMetric):
     Calculates proportion of ground-truth document IDs found in retrieved documents.
     """
 
-    def __init__(self, name: str = "RetrievalRecallMetric", threshold: float = 0.5, **kwargs):
+    def __init__(
+        self, name: str = "RetrievalRecallMetric", threshold: float = 0.5, **kwargs
+    ):
         self.name = name
         self.threshold = threshold
-        self.score: Optional[float] = 0.0
-        self.reason: Optional[str] = None
-        self.success: Optional[bool] = None
+        self.score: float | None = 0.0
+        self.reason: str | None = None
+        self.success: bool | None = None
 
     def measure(self, test_case: LLMTestCase) -> float:
         metadata = test_case.metadata or {}
@@ -304,10 +353,17 @@ class RetrievalRecallMetric(BaseMetric):
         return self.score
 
     def get_reason(self) -> str:
-        return self.reason or f"Deterministic document recall score: {(self.score or 0.0):.4f}"
+        return (
+            self.reason
+            or f"Deterministic document recall score: {(self.score or 0.0):.4f}"
+        )
 
     def is_successful(self) -> bool:
-        return bool(self.success if self.success is not None else (self.score is not None and self.score >= self.threshold))
+        return bool(
+            self.success
+            if self.success is not None
+            else (self.score is not None and self.score >= self.threshold)
+        )
 
 
 class RetrievalPrecisionMetric(BaseMetric):
@@ -316,12 +372,14 @@ class RetrievalPrecisionMetric(BaseMetric):
     Calculates proportion of retrieved documents that match ground-truth document IDs.
     """
 
-    def __init__(self, name: str = "RetrievalPrecisionMetric", threshold: float = 0.5, **kwargs):
+    def __init__(
+        self, name: str = "RetrievalPrecisionMetric", threshold: float = 0.5, **kwargs
+    ):
         self.name = name
         self.threshold = threshold
-        self.score: Optional[float] = 0.0
-        self.reason: Optional[str] = None
-        self.success: Optional[bool] = None
+        self.score: float | None = 0.0
+        self.reason: str | None = None
+        self.success: bool | None = None
 
     def measure(self, test_case: LLMTestCase) -> float:
         metadata = test_case.metadata or {}
@@ -339,7 +397,14 @@ class RetrievalPrecisionMetric(BaseMetric):
         return self.score
 
     def get_reason(self) -> str:
-        return self.reason or f"Deterministic document precision score: {(self.score or 0.0):.4f}"
+        return (
+            self.reason
+            or f"Deterministic document precision score: {(self.score or 0.0):.4f}"
+        )
 
     def is_successful(self) -> bool:
-        return bool(self.success if self.success is not None else (self.score is not None and self.score >= self.threshold))
+        return bool(
+            self.success
+            if self.success is not None
+            else (self.score is not None and self.score >= self.threshold)
+        )
