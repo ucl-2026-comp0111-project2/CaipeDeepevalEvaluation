@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Callable
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from deepeval_eval.llm_client import make_generation_prompt, make_short_answer_prompt
 
@@ -23,6 +24,9 @@ class PromptStyle(str, Enum):
                 if member.value.lower() == val_lower:
                     return member
         return None
+
+
+DEFAULT_PROMPT_STYLE: str = PromptStyle.GENERATION.value
 
 
 PromptBuilder = Callable[[str, list[str]], str]
@@ -101,7 +105,7 @@ def build_prompt(
             load_prompt_styles_from_config(config_env)
 
     if style is None:
-        style_key = PromptStyle.GENERATION.value
+        style_key = DEFAULT_PROMPT_STYLE
     elif isinstance(style, PromptStyle):
         style_key = style.value
     else:

@@ -2,14 +2,21 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+
 import pytest
 
 from deepeval_eval.prompt_style import (
+    DEFAULT_PROMPT_STYLE,
     PromptStyle,
     build_prompt,
     load_prompt_styles_from_config,
     register_prompt_style,
 )
+
+
+def test_default_prompt_style_constant() -> None:
+    assert DEFAULT_PROMPT_STYLE == "generation"
+    assert DEFAULT_PROMPT_STYLE == PromptStyle.GENERATION.value
 
 
 def test_prompt_style_enum_positive() -> None:
@@ -43,7 +50,9 @@ def test_build_prompt_default_and_builtin_positive() -> None:
 
 def test_register_prompt_style_positive() -> None:
     register_prompt_style("custom_style", "Summary of {question}:\n{context}")
-    result = build_prompt("custom_style", "Explain quantum computing", ["Qubits superpose."])
+    result = build_prompt(
+        "custom_style", "Explain quantum computing", ["Qubits superpose."]
+    )
     assert "Summary of Explain quantum computing:" in result
     assert "[1] Qubits superpose." in result
 
