@@ -13,7 +13,18 @@ dependencies = [
   'requests',
   'pydantic',
   'pyyaml',
+  'fastapi',
+  'uvicorn',
+  'python-multipart',
 ]
 
 [tool.coverage.run]
 branch = true
+
+[dependency-groups]
+dev = [
+  "ruff",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
