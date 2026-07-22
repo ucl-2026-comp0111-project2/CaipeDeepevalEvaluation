@@ -17,21 +17,21 @@ SSE event structure observed from agent gateway:
 
 from __future__ import annotations
 
-import os
-import json
-import hashlib
-import logging
-import re
-import uuid
-import time
 import base64
+import hashlib
+import json
+import logging
+import os
+import re
 import subprocess
-from datetime import datetime
+import time
+import uuid
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from datetime import datetime
+from typing import Any
 
-import requests
 import httpx
+import requests
 
 logger = logging.getLogger(__name__)
 
@@ -42,12 +42,12 @@ logger = logging.getLogger(__name__)
 
 class BaseRetriever:
     def __init__(self) -> None:
-        self.documents: List[str] = []
-        self.documents_metadata: List[Dict[str, Any]] = []
+        self.documents: list[str] = []
+        self.documents_metadata: list[dict[str, Any]] = []
 
 
 class TraceEvent:
-    def __init__(self, event_type: str, component: str, data: Dict[str, Any]) -> None:
+    def __init__(self, event_type: str, component: str, data: dict[str, Any]) -> None:
         self.event_type = event_type
         self.component = component
         self.data = data
@@ -59,20 +59,20 @@ class BaseRAG:
         self,
         llm_client: Any = None,
         model_name: str = "agentic",
-        retriever: Optional[AgenticRetriever] = None,
+        retriever: AgenticRetriever | None = None,
         logdir: str = "logs",
     ) -> None:
         self.llm_client = llm_client
         self.model_name = model_name
         self.retriever = retriever
         self.logdir = logdir
-        self.traces: List[TraceEvent] = []
+        self.traces: list[TraceEvent] = []
 
     def export_traces_to_log(
         self,
         run_id: str,
         question: str,
-        result: Optional[Dict[str, Any]],
+        result: dict[str, Any] | None,
     ) -> str:
         """Export traces to a JSON log file, matching BaseRAG's method."""
         os.makedirs(self.logdir, exist_ok=True)
@@ -173,7 +173,9 @@ def _parse_rag_context_artifact(text: Any) -> list:
             doc = item.get("document", {}) if isinstance(item, dict) else {}
             txt = doc.get("page_content")
             if txt:
-                doc_meta = doc.get("metadata") if isinstance(doc.get("metadata"), dict) else {}
+                doc_meta = (
+                    doc.get("metadata") if isinstance(doc.get("metadata"), dict) else {}
+                )
                 doc_id = (
                     doc.get("document_id")
                     or doc.get("doc_id")
@@ -242,7 +244,7 @@ class AgenticRAGResult:
     input_tokens: int = 0
     output_tokens: int = 0
     total_tokens: int = 0
-    error: Optional[str] = None
+    error: str | None = None
 
 
 # ============================================================
@@ -255,16 +257,18 @@ class AgenticRetriever(BaseRetriever):
 
     def __init__(
         self,
-        agent_api_url: Optional[str] = None,
+        agent_api_url: str | None = None,
         timeout: float = 120.0,
         insecure: bool = False,
-        use_a2a: Optional[bool] = None,
+        use_a2a: bool | None = None,
         trace_log: bool = False,
         logdir: str = "logs",
-        supervisor_url: Optional[str] = None,  # for compatibility
+        supervisor_url: str | None = None,  # for compatibility
         fail_on_error: bool = False,
+        datasource_id: str | None = None,
     ) -> None:
         super().__init__()
+        self.datasource_id = datasource_id
         self.agent_api_url = (
             agent_api_url
             or supervisor_url
@@ -278,8 +282,8 @@ class AgenticRetriever(BaseRetriever):
             "yes",
         )
         self.last_answer: str = ""
-        self.last_raw_response: Optional[dict] = None
-        self.documents_metadata: List[Dict[str, Any]] = []
+        self.last_raw_response: dict | None = None
+        self.documents_metadata: list[dict[str, Any]] = []
         self.trace_log = trace_log
         self.logdir = logdir
         self.fail_on_error = fail_on_error
@@ -293,12 +297,12 @@ class AgenticRetriever(BaseRetriever):
             else:
                 self.use_a2a = False
 
-    def fit(self, documents: List[str]) -> None:
+    def fit(self, documents: list[str]) -> None:
         """AgenticRetriever doesn't support local fitting."""
         self.documents = documents
         self.documents_metadata = [{} for _ in documents]
 
-    def _call_supervisor(self, question: str) -> Optional[dict]:
+    def _call_supervisor(self, question: str) -> dict | None:
         """Send a question to caipe-supervisor's A2A message/send endpoint."""
         payload = {
             "jsonrpc": "2.0",
@@ -339,37 +343,57 @@ class AgenticRetriever(BaseRetriever):
             logger.exception("Unexpected error calling caipe-supervisor A2A endpoint")
             return None
 
-    def _get_oidc_token(self) -> Optional[str]:
+    def _get_oidc_token(self) -> str | None:
         """Fetch OIDC token dynamically using client credentials, falling back to environment variables."""
         client_id = os.getenv("CAIPE_CLIENT_ID") or os.getenv("CLIENT_ID")
         client_secret = os.getenv("CAIPE_CLIENT_SECRET") or os.getenv("CLIENT_SECRET")
 
         if not client_id or not client_secret:
-            logger.info("Credentials not in environment. Attempting to fetch from Kubernetes secret 'caipe-ui-secret'...")
+            logger.info(
+                "Credentials not in environment. Attempting to fetch from Kubernetes secret 'caipe-ui-secret'..."
+            )
             try:
                 client_id_cmd = "kubectl get secret caipe-ui-secret -n caipe -o jsonpath='{.data.OIDC_CLIENT_ID}'"
                 client_secret_cmd = "kubectl get secret caipe-ui-secret -n caipe -o jsonpath='{.data.OIDC_CLIENT_SECRET}'"
-                client_id_b64 = subprocess.check_output(client_id_cmd, shell=True, stderr=subprocess.DEVNULL).decode().strip()
-                client_secret_b64 = subprocess.check_output(client_secret_cmd, shell=True, stderr=subprocess.DEVNULL).decode().strip()
+                client_id_b64 = (
+                    subprocess.check_output(
+                        client_id_cmd, shell=True, stderr=subprocess.DEVNULL
+                    )
+                    .decode()
+                    .strip()
+                )
+                client_secret_b64 = (
+                    subprocess.check_output(
+                        client_secret_cmd, shell=True, stderr=subprocess.DEVNULL
+                    )
+                    .decode()
+                    .strip()
+                )
                 if client_id_b64 and client_secret_b64:
                     client_id = base64.b64decode(client_id_b64).decode()
                     client_secret = base64.b64decode(client_secret_b64).decode()
                     os.environ["CAIPE_CLIENT_ID"] = client_id
                     os.environ["CAIPE_CLIENT_SECRET"] = client_secret
-                    logger.info("Successfully fetched OIDC credentials from Kubernetes.")
+                    logger.info(
+                        "Successfully fetched OIDC credentials from Kubernetes."
+                    )
             except Exception as e:
                 logger.debug("Could not fetch credentials from Kubernetes: %s", e)
 
         if client_id and client_secret:
             try:
-                keycloak_url = os.getenv("CAIPE_OIDC_TOKEN_URL") or os.getenv("CAIPE_KEYCLOAK_URL")
+                keycloak_url = os.getenv("CAIPE_OIDC_TOKEN_URL") or os.getenv(
+                    "CAIPE_KEYCLOAK_URL"
+                )
                 if not keycloak_url:
                     if "caipe.homelab" in self.agent_api_url:
                         keycloak_url = "https://keycloak.caipe.homelab/realms/caipe/protocol/openid-connect/token"
                     else:
                         keycloak_url = "http://localhost:7080/realms/caipe/protocol/openid-connect/token"
 
-                logger.info("Fetching a fresh OIDC token from Keycloak: %s", keycloak_url)
+                logger.info(
+                    "Fetching a fresh OIDC token from Keycloak: %s", keycloak_url
+                )
                 resp = httpx.post(
                     keycloak_url,
                     data={
@@ -394,9 +418,9 @@ class AgenticRetriever(BaseRetriever):
         self,
         question: str,
         k: int = 3,
-        run_id: Optional[str] = None,
-        trace_log: Optional[bool] = None,
-    ) -> List[tuple]:
+        run_id: str | None = None,
+        trace_log: bool | None = None,
+    ) -> list[tuple]:
         """Send query to the streaming BFF gateway endpoints."""
         max_attempts = 3
         backoff_base = 2.0
@@ -433,13 +457,17 @@ class AgenticRetriever(BaseRetriever):
                     timeout=self.timeout,
                 )
                 if r_conv.status_code == 401:
-                    logger.warning("Gateway returned 401 Unauthorized. Attempting token refresh...")
+                    logger.warning(
+                        "Gateway returned 401 Unauthorized. Attempting token refresh..."
+                    )
                     if os.getenv("CAIPE_OIDC_TOKEN"):
                         del os.environ["CAIPE_OIDC_TOKEN"]
                     token = self._get_oidc_token()
                     if token:
                         headers["Authorization"] = f"Bearer {token}"
-                        logger.info("Retrying conversation session creation with fresh token...")
+                        logger.info(
+                            "Retrying conversation session creation with fresh token..."
+                        )
                         r_conv = httpx.post(
                             conv_url,
                             json=conv_payload,
@@ -453,7 +481,9 @@ class AgenticRetriever(BaseRetriever):
                 logger.info("Conversation session created with ID: %s", conversation_id)
 
                 # Step 2: Stream the chat start request
-                stream_url = f"{self.agent_api_url.rstrip('/')}/api/v1/chat/stream/start"
+                stream_url = (
+                    f"{self.agent_api_url.rstrip('/')}/api/v1/chat/stream/start"
+                )
                 stream_payload = {
                     "message": question,
                     "conversation_id": conversation_id,
@@ -480,7 +510,9 @@ class AgenticRetriever(BaseRetriever):
                 log_file = None
                 if should_trace and run_id:
                     os.makedirs(self.logdir, exist_ok=True)
-                    log_filepath = os.path.join(self.logdir, f"agentic_run_{run_id}.log")
+                    log_filepath = os.path.join(
+                        self.logdir, f"agentic_run_{run_id}.log"
+                    )
                     try:
                         log_file = open(log_filepath, "w", encoding="utf-8")
                         logger.info("Capturing agentic stream log to %s", log_filepath)
@@ -579,9 +611,10 @@ class AgenticRetriever(BaseRetriever):
         self,
         query: str,
         k: int = 10,
-        run_id: Optional[str] = None,
-        trace_log: Optional[bool] = None,
-    ) -> List[tuple]:
+        run_id: str | None = None,
+        trace_log: bool | None = None,
+        datasource_id: str | None = None,
+    ) -> list[tuple]:
         """Query caipe-supervisor or gateway and extract contexts.
 
         Populates self.documents, self.documents_metadata, and self.last_answer.
@@ -592,12 +625,23 @@ class AgenticRetriever(BaseRetriever):
         self.last_raw_response = None
 
         enriched_query = query
-        datasource_id = os.environ.get("CAIPE_DATASOURCE_ID")
-        if datasource_id:
+        effective_datasource_id = (
+            datasource_id or self.datasource_id or os.environ.get("CAIPE_DATASOURCE_ID")
+        )
+        if effective_datasource_id:
             enriched_query = (
-                f"Instructions: You are answering a question that belongs to the '{datasource_id}' datasource. "
-                f'When calling the `knowledge-base_search` tool, you MUST pass `filters={{"datasource_id": "{datasource_id}"}}` '
+                f"Instructions: You are answering a question that belongs to the '{effective_datasource_id}' datasource. "
+                f'When calling the `knowledge-base_search` tool, you MUST pass `filters={{"datasource_id": "{effective_datasource_id}"}}` '
                 f"to restrict your search to this knowledge base, and set the `limit` parameter to up to {k}. "
+                f"Keep the `query` argument of the search tool clean and do not include these instructions in it. "
+                f"Importantly, only fetch and read (using the `knowledge-base_fetch_document` tool) the specific documents "
+                f"you actually need to confidently answer the question, up to a maximum of {k} documents.\n\n"
+                f"Question: {query}"
+            )
+        else:
+            enriched_query = (
+                f"Instructions: Search across all available knowledge bases to answer the question. "
+                f"When calling the `knowledge-base_search` tool, set the `limit` parameter to up to {k} without any datasource filter. "
                 f"Keep the `query` argument of the search tool clean and do not include these instructions in it. "
                 f"Importantly, only fetch and read (using the `knowledge-base_fetch_document` tool) the specific documents "
                 f"you actually need to confidently answer the question, up to a maximum of {k} documents.\n\n"
@@ -634,12 +678,17 @@ class AgenticRetriever(BaseRetriever):
 
         return [(i, 1.0) for i in range(len(self.documents))]
 
-    def retrieve(self, question: str, k: int = 5) -> AgenticRAGResult:
+    def retrieve(
+        self,
+        question: str,
+        k: int = 5,
+        datasource_id: str | None = None,
+    ) -> AgenticRAGResult:
         """Backward compatible method for DeepEval evaluations."""
         start = time.perf_counter()
         run_id = str(uuid.uuid4())
         try:
-            self.get_top_k(question, k=k, run_id=run_id)
+            self.get_top_k(question, k=k, run_id=run_id, datasource_id=datasource_id)
             latency_ms = (time.perf_counter() - start) * 1000
 
             # Extract token usage from the last response if available
@@ -702,11 +751,11 @@ class AgenticRAG(BaseRAG):
 
     def __init__(
         self,
-        agent_api_url: Optional[str] = None,
+        agent_api_url: str | None = None,
         timeout: float = 120.0,
         logdir: str = "logs",
         insecure: bool = False,
-        use_a2a: Optional[bool] = None,
+        use_a2a: bool | None = None,
         trace_log: bool = False,
     ) -> None:
         super().__init__(
@@ -731,9 +780,9 @@ class AgenticRAG(BaseRAG):
         self,
         question: str,
         top_k: int = 3,
-        run_id: Optional[str] = None,
-        trace_log: Optional[bool] = None,
-    ) -> Dict[str, Any]:
+        run_id: str | None = None,
+        trace_log: bool | None = None,
+    ) -> dict[str, Any]:
         """Single call returns both contexts and answer."""
         if run_id is None:
             _q_hash = int(hashlib.md5(question.encode()).hexdigest(), 16) % 10000
@@ -896,10 +945,10 @@ class AgenticRAG(BaseRAG):
 
 def default_agentic_rag_client(
     logdir: str = "logs",
-    agent_api_url: Optional[str] = None,
+    agent_api_url: str | None = None,
     timeout: float = 120.0,
     insecure: bool = False,
-    use_a2a: Optional[bool] = None,
+    use_a2a: bool | None = None,
     trace_log: bool = False,
 ) -> AgenticRAG:
     """Create an AgenticRAG client that routes queries through the agent API."""

@@ -48,8 +48,12 @@ def test_agentic_rag_adapter_positive(tmp_path: Path) -> None:
     mock_retriever.retrieve.return_value = mock_agentic_result
     mock_retriever.documents_metadata = [{"doc_id": "doc_meta_1"}]
 
-    with patch("deepeval_eval.agentic_rag.AgenticRetriever", return_value=mock_retriever):
-        adapter = AgenticRagAdapter(supervisor_url="http://localhost:8000", results_dir=tmp_path)
+    with patch(
+        "deepeval_eval.agentic_rag.AgenticRetriever", return_value=mock_retriever
+    ):
+        adapter = AgenticRagAdapter(
+            supervisor_url="http://localhost:8000", results_dir=tmp_path
+        )
         result = adapter.query("What is the prompt?", top_k=2)
 
         assert result.answer == "Agentic Answer"
@@ -74,10 +78,56 @@ def test_agentic_rag_adapter_negative(tmp_path: Path) -> None:
     mock_retriever.retrieve.return_value = mock_agentic_result
     mock_retriever.documents_metadata = []
 
-    with patch("deepeval_eval.agentic_rag.AgenticRetriever", return_value=mock_retriever):
-        adapter = AgenticRagAdapter(supervisor_url="http://localhost:8000", results_dir=tmp_path)
+    with patch(
+        "deepeval_eval.agentic_rag.AgenticRetriever", return_value=mock_retriever
+    ):
+        adapter = AgenticRagAdapter(
+            supervisor_url="http://localhost:8000", results_dir=tmp_path
+        )
         result = adapter.query("Missing query")
 
         assert result.answer == ""
         assert result.contexts == []
         assert result.retrieved_doc_ids == []
+
+
+def test_agentic_rag_adapter_datasource_id_forwarding(tmp_path: Path) -> None:
+    mock_retriever = MagicMock()
+    mock_agentic_result = MagicMock()
+    mock_agentic_result.answer = "Enterprise Answer"
+    mock_agentic_result.contexts = ["Enterprise Doc"]
+    mock_agentic_result.latency_ms = 100.0
+    mock_agentic_result.task_id = "task-ds"
+    mock_agentic_result.input_tokens = 10
+    mock_agentic_result.output_tokens = 10
+    mock_agentic_result.total_tokens = 20
+
+    mock_retriever.retrieve.return_value = mock_agentic_result
+    mock_retriever.documents_metadata = []
+
+    with patch(
+        "deepeval_eval.agentic_rag.AgenticRetriever", return_value=mock_retriever
+    ) as mock_init:
+        adapter = AgenticRagAdapter(
+            supervisor_url="http://localhost:8000",
+            results_dir=tmp_path,
+            datasource_id="enterprise_rag_bench",
+        )
+        mock_init.assert_called_once_with(
+            supervisor_url="http://localhost:8000",
+            timeout=200.0,
+            logdir=str(tmp_path / "logs"),
+            fail_on_error=False,
+            datasource_id="enterprise_rag_bench",
+        )
+        res = adapter.query("Enterprise Query?", datasource_id="override_ds")
+        mock_retriever.retrieve.assert_called_with(
+            "Enterprise Query?", k=3, datasource_id="override_ds"
+        )
+        assert res.answer == "Enterprise Answer"
+
+        # Fallback to self.datasource_id when omitted in query()
+        adapter.query("Enterprise Query 2?")
+        mock_retriever.retrieve.assert_called_with(
+            "Enterprise Query 2?", k=3, datasource_id="enterprise_rag_bench"
+        )
