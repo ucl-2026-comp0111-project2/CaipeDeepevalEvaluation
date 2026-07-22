@@ -138,7 +138,7 @@ def run_eval(args: argparse.Namespace) -> None:
         DeprecationWarning,
         stacklevel=2,
     )
-    args.benchmark = "enterprise"
+    args.dataset_name = "enterprise"
     deepeval_evaluator._run_eval(args)
 
 

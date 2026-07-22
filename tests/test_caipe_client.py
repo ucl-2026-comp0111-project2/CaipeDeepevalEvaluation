@@ -10,6 +10,7 @@ from deepeval_eval.caipe_client import (
     check_response,
     extract_contexts_and_sources,
 )
+from deepeval_eval.prompt_style import PromptStyle
 
 
 def test_check_response_positive() -> None:
@@ -172,16 +173,18 @@ def test_caipe_rag_client_ingest_endpoints(tmp_path) -> None:
         client.ingest_batch(docs, "ing123", "ds1", "job789")
 
 
-def test_caipe_rag_client_hotpotqa_query() -> None:
+def test_caipe_rag_client_prompt_style_query() -> None:
     client = CaipeRagClient(base_url="https://caipe.homelab/api", token="static_token")
     mock_llm = MagicMock()
-    mock_llm.generate.return_value = "Hotpot Answer"
+    mock_llm.generate.return_value = "Short Answer"
 
-    raw_results = [{"document": {"page_content": "Hotpot context", "metadata": {"document_id": "hp1"}}}]
+    raw_results = [{"document": {"page_content": "Short context", "metadata": {"document_id": "hp1"}}}]
     with patch.object(client, "query_raw", return_value=raw_results):
-        res = client.query("What is Y?", benchmark="hotpotqa", llm_client=mock_llm)
-        assert res.answer == "Hotpot Answer"
+        res = client.query("What is Y?", prompt_style=PromptStyle.SHORT, llm_client=mock_llm)
+        assert res.answer == "Short Answer"
         assert res.retrieved_doc_ids == ["hp1"]
+        assert mock_llm.generate.called
+        assert "Keep the answer short" in mock_llm.generate.call_args[0][0]
 
 
 def test_build_caipe_client_positive() -> None:

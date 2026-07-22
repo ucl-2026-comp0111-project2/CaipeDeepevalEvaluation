@@ -12,7 +12,6 @@ after run_batch_topk.py finishes.
 
 import pandas as pd
 from pathlib import Path
-import json
 from datetime import datetime
 
 REPO_ROOT = Path(__file__).resolve().parent.parent

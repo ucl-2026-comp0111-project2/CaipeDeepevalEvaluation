@@ -4,6 +4,7 @@ import requests
 import time
 from typing import Any
 
+from deepeval_eval.prompt_style import PromptStyle, build_prompt
 from deepeval_eval.rag_client import BaseRagClient, RagQueryResult  # Re-exported for backward compatibility
 
 
@@ -205,7 +206,8 @@ class CaipeRagClient(BaseRagClient):
         datasource_id: str | None = None,
         top_k: int = 3,
         answer_mode: str = "generate",
-        benchmark: str = "enterprise",
+        dataset_name: str = "enterprise",
+        prompt_style: str | PromptStyle | None = None,
         llm_client: Any = None,
         max_context_chars: int = 12000,
         **kwargs: Any,
@@ -215,16 +217,11 @@ class CaipeRagClient(BaseRagClient):
         contexts, sources = extract_contexts_and_sources(retrieved_raw)
         trimmed_contexts = [c[:max_context_chars] for c in contexts]
 
-        if benchmark == "hotpotqa":
-            from deepeval_eval.llm_client import make_short_answer_prompt
-            if llm_client is None:
-                raise ValueError("llm_client is required for answer generation")
-            answer = str(llm_client.generate(make_short_answer_prompt(question, trimmed_contexts)))
-        else:
-            from deepeval_eval.llm_client import make_generation_prompt
-            if llm_client is None:
-                raise ValueError("llm_client is required for answer generation")
-            answer = str(llm_client.generate(make_generation_prompt(question, trimmed_contexts)))
+        if llm_client is None:
+            raise ValueError("llm_client is required for answer generation")
+
+        prompt = build_prompt(prompt_style, question, trimmed_contexts)
+        answer = str(llm_client.generate(prompt))
 
         latency_sec = time.time() - start_time
         retrieved_ids = [

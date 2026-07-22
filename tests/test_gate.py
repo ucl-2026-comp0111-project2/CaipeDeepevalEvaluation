@@ -1,4 +1,4 @@
-from deepeval_eval.gate import evaluate_gate, render_markdown
+from deepeval_eval.gate import evaluate_gate, render_markdown, resolve_metric_class_name
 
 
 def _metric(score, success=None):
@@ -81,3 +81,53 @@ def test_render_markdown_reflects_status():
     assert 'PASSED' in passed
     failed = render_markdown(evaluate_gate([_record(fa=0.3) for _ in range(3)], HARD_CONFIG))
     assert 'FAILED' in failed
+
+
+def test_resolve_metric_class_name():
+    assert resolve_metric_class_name("answer_relevancy") == "AnswerRelevancyMetric"
+    assert resolve_metric_class_name("answer_correctness") == "AnswerCorrectnessMetric"
+    assert resolve_metric_class_name("custom_eval") == "CustomEvalMetric"
+
+
+def test_load_thresholds_json_and_validation(tmp_path):
+    import json
+    from deepeval_eval.gate import load_thresholds
+    import pytest
+
+    json_file = tmp_path / "thresholds.json"
+    json_file.write_text(json.dumps({"error_tolerance": 0.05}), encoding="utf-8")
+    data = load_thresholds(json_file)
+    assert data["error_tolerance"] == 0.05
+
+    bad_file = tmp_path / "invalid.json"
+    bad_file.write_text("12345", encoding="utf-8")
+    with pytest.raises(ValueError, match="Gate config must be a mapping"):
+        load_thresholds(bad_file)
+
+
+def test_run_gate_on_results_and_main(tmp_path, monkeypatch):
+    import json
+    from deepeval_eval.gate import main, run_gate_on_results
+
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("error_tolerance: 0.1\n", encoding="utf-8")
+
+    results = [_record() for _ in range(2)]
+    summary_dir = tmp_path / "summary"
+    summary_dir.mkdir()
+
+    gh_step = tmp_path / "github_step_summary.txt"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(gh_step))
+
+    passed = run_gate_on_results(results, config_path, summary_dir)
+    assert passed
+    assert (summary_dir / "gate_summary.md").exists()
+    assert gh_step.exists()
+
+    results_file = tmp_path / "results.json"
+    results_file.write_text(json.dumps(results), encoding="utf-8")
+
+    exit_code = main(["--results", str(results_file), "--config", str(config_path)])
+    assert exit_code == 0
+
+

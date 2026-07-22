@@ -4,7 +4,6 @@ import argparse
 import json
 import os
 import statistics
-import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
@@ -17,6 +16,16 @@ METRIC_KEY_TO_CLASS = {
     'contextual_precision': 'ContextualPrecisionMetric',
     'contextual_recall': 'ContextualRecallMetric',
 }
+
+
+def resolve_metric_class_name(key: str) -> str:
+    """Resolve a config metric key to its DeepEval metric class name."""
+    if key in METRIC_KEY_TO_CLASS:
+        return METRIC_KEY_TO_CLASS[key]
+    # Fallback: convert snake_case to PascalCaseMetric (e.g., answer_correctness -> AnswerCorrectnessMetric)
+    pascal = ''.join(word.capitalize() for word in key.split('_'))
+    return pascal if pascal.endswith('Metric') else f'{pascal}Metric'
+
 
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[2] / 'gate_thresholds.yaml'
 
@@ -152,8 +161,8 @@ def evaluate_gate(results: list[dict[str, Any]], config: dict[str, Any]) -> Gate
         return report
 
     for key, thr in (config.get('metrics') or {}).items():
-        class_name = METRIC_KEY_TO_CLASS.get(key)
-        agg = aggregate_metric(results, class_name, key) if class_name else None
+        class_name = resolve_metric_class_name(key)
+        agg = aggregate_metric(results, class_name, key)
         report.metric_aggs[key] = agg
         if agg is None:
             continue  # metric absent from this run; nothing to judge

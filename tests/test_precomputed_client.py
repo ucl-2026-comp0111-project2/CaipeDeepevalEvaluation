@@ -51,7 +51,7 @@ def test_precomputed_rag_client_generate_mode_positive() -> None:
         reference="Paris",
         datasource_id=None,
         answer_mode="generate",
-        benchmark="enterprise",
+        dataset_name="enterprise",
         llm_client=mock_llm,
     )
 

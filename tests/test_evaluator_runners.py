@@ -159,9 +159,10 @@ def test_hotpotqa_deepeval_full_ingest_mocked(tmp_path: Path, monkeypatch) -> No
     mock_client.ingest_batch.assert_called_once()
 
 
-def test_precomputed_deepeval_make_answer_and_helpers(tmp_path: Path) -> None:
+def test_precomputed_deepeval_make_answer_and_helpers(tmp_path: Path, monkeypatch) -> None:
     from deepeval_eval.precomputed_deepeval import (
-        build_gold_sources, context_from_row, retrieve_live_context_and_sources, make_answer
+        build_gold_sources, context_from_row, retrieve_live_context_and_sources, make_answer,
+        run_eval, write_results, main
     )
 
     row = {"expected_doc_ids": ["d1"], "source_types": ["slack"]}
@@ -170,6 +171,9 @@ def test_precomputed_deepeval_make_answer_and_helpers(tmp_path: Path) -> None:
 
     row_ctx = {"context": ["Context string"]}
     assert context_from_row(row_ctx, 100) == ["Context string"]
+
+    row_str_ctx = {"context": "Single string context"}
+    assert context_from_row(row_str_ctx, 100) == ["Single string context"]
 
     mock_client = MagicMock()
     mock_client.query.return_value = [
@@ -180,14 +184,36 @@ def test_precomputed_deepeval_make_answer_and_helpers(tmp_path: Path) -> None:
 
     mock_llm = MagicMock()
     mock_llm.generate.return_value = "Generated answer"
-    args_ref = MagicMock(answer_mode="reference", benchmark="enterprise")
+    args_ref = MagicMock(answer_mode="reference", dataset_name="enterprise")
     assert make_answer(args_ref, mock_llm, "Q?", "Ref!", ["C"]) == "Ref!"
 
-    args_gen = MagicMock(answer_mode="generated", benchmark="enterprise")
+    args_gen = MagicMock(answer_mode="generated", dataset_name="enterprise")
     assert make_answer(args_gen, mock_llm, "Q?", "Ref!", ["C"]) == "Generated answer"
 
-    args_hp = MagicMock(answer_mode="generated", benchmark="hotpotqa")
-    assert make_answer(args_hp, mock_llm, "Q?", "Ref!", ["C"]) == "Generated answer"
+    args_short = MagicMock(answer_mode="generated", dataset_name="hotpotqa", prompt_style="short")
+    assert make_answer(args_short, mock_llm, "Q?", "Ref!", ["C"]) == "Generated answer"
+
+    # Test write_results
+    write_results(tmp_path)
+    summary_files = list(tmp_path.glob("precomputed_deepeval_enterprise_reference_*_summary.json"))
+    assert len(summary_files) == 1
+
+    # Test run_eval deprecation warning
+    mock_args = MagicMock()
+    monkeypatch.setattr("deepeval_eval.deepeval_evaluator._run_eval", lambda a: None)
+    import warnings
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        run_eval(mock_args)
+        assert len(w) == 1
+        assert "deprecated" in str(w[0].message)
+
+    # Test main CLI call with --help
+    with patch("sys.argv", ["precomputed_deepeval", "--help"]):
+        try:
+            main()
+        except SystemExit:
+            pass
 
 
 def test_run_eval_positive(tmp_path: Path, monkeypatch) -> None:
@@ -206,7 +232,7 @@ def test_run_eval_positive(tmp_path: Path, monkeypatch) -> None:
         llm_api_key="k",
         llm_model="m",
         datasource_id="ds1",
-        benchmark="enterprise",
+        dataset_name="enterprise",
         questions_file=questions_file,
         max_items=1,
         limit_per_category=None,
@@ -234,3 +260,18 @@ def test_run_eval_positive(tmp_path: Path, monkeypatch) -> None:
 
     results_dir = tmp_path / "results"
     assert results_dir.exists()
+
+
+def test_deepeval_evaluator_prompt_config_cli(tmp_path: Path) -> None:
+    parser = build_evaluator_parser()
+    prompt_cfg = tmp_path / "custom_prompts.yaml"
+    prompt_cfg.write_text("prompt_styles:\n  my_style: 'Q: {question} C: {context}'\n", encoding="utf-8")
+
+    args = parser.parse_args([
+        "eval",
+        "--prompt-style", "my_style",
+        "--prompt-config", str(prompt_cfg),
+    ])
+    assert args.prompt_style == "my_style"
+    assert args.prompt_config == prompt_cfg
+

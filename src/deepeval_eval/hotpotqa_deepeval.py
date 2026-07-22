@@ -120,7 +120,7 @@ def run_eval(args: argparse.Namespace) -> None:
         DeprecationWarning,
         stacklevel=2,
     )
-    args.benchmark = "hotpotqa"
+    args.dataset_name = "hotpotqa"
     deepeval_evaluator._run_eval(args)
 
 

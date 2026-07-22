@@ -10,7 +10,8 @@ from __future__ import annotations
 import time
 
 from deepeval_eval.caipe_client import CaipeRagClient, extract_contexts_and_sources
-from deepeval_eval.llm_client import OpenAICompatibleClient, make_generation_prompt, make_short_answer_prompt
+from deepeval_eval.llm_client import OpenAICompatibleClient
+from deepeval_eval.prompt_style import PromptStyle, build_prompt
 from deepeval_eval.rag_client import BaseRagClient, RagQueryResult
 
 
@@ -28,7 +29,8 @@ class PrecomputedRagClient(BaseRagClient):
         datasource_id: str | None,
         top_k: int = 3,
         answer_mode: str = "reference",
-        benchmark: str = "enterprise",
+        dataset_name: str = "enterprise",
+        prompt_style: str | PromptStyle | None = None,
         llm_client: OpenAICompatibleClient | None = None,
         max_context_chars: int = 12000,
     ) -> RagQueryResult:
@@ -42,14 +44,11 @@ class PrecomputedRagClient(BaseRagClient):
 
         if answer_mode == "reference":
             answer = reference
-        elif benchmark == "hotpotqa":
-            if llm_client is None:
-                raise ValueError("llm_client is required when answer_mode != 'reference'")
-            answer = str(llm_client.generate(make_short_answer_prompt(question, trimmed_contexts)))
         else:
             if llm_client is None:
                 raise ValueError("llm_client is required when answer_mode != 'reference'")
-            answer = str(llm_client.generate(make_generation_prompt(question, trimmed_contexts)))
+            prompt = build_prompt(prompt_style, question, trimmed_contexts)
+            answer = str(llm_client.generate(prompt))
 
         latency_sec = time.time() - start_time
         retrieved_ids = [

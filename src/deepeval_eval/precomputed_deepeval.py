@@ -27,16 +27,10 @@ from deepeval_eval.llm_client import (
 # Ensure your custom metrics are imported properly from metrics.py
 
 
-DEFAULT_QUESTION_FILES = {
-    "enterprise": DEFAULT_DATA_DIR / "enterprise_deepeval_questions.jsonl",
-    "hotpotqa": DEFAULT_DATA_DIR / "hotpotqa_deepeval_questions.jsonl",
-}
-
-
 def build_gold_sources(row: dict[str, Any]) -> list[dict[str, Any]]:
     expected_doc_ids = list(row.get("expected_doc_ids") or [])
     source_types = list(row.get("source_types") or [])
-    source_type = source_types[0] if source_types else row.get("benchmark")
+    source_type = source_types[0] if source_types else (row.get("dataset_name") or row.get("benchmark"))
     return [
         {
             "document_id": doc_id,
@@ -84,7 +78,9 @@ def make_answer(
 ) -> str:
     if args.answer_mode == "reference":
         return reference
-    if args.benchmark == "hotpotqa":
+    ds_name = getattr(args, "dataset_name", None) or getattr(args, "benchmark", "hotpotqa")
+    prompt_style = getattr(args, "prompt_style", None)
+    if prompt_style == "short" or (prompt_style is None and ds_name == "hotpotqa"):
         return str(llm_client.generate(make_short_answer_prompt(question, contexts)))
     return str(llm_client.generate(make_generation_prompt(question, contexts)))
 
@@ -101,7 +97,7 @@ def run_eval(args: argparse.Namespace) -> None:
 
 def write_results(
     results_dir: Path,
-    benchmark: str = "enterprise",
+    dataset_name: str = "enterprise",
     answer_mode: str = "reference",
     results: list[dict[str, Any]] | None = None,
     evaluation_time: float = 0.0,
@@ -112,8 +108,8 @@ def write_results(
     if config_args is None:
         config_args = {}
     config = dict(config_args)
-    config["datasource"] = f"{benchmark}_precomputed"
-    prefix = f"precomputed_deepeval_{benchmark}_{answer_mode}"
+    config["datasource"] = f"{dataset_name}_precomputed"
+    prefix = f"precomputed_deepeval_{dataset_name}_{answer_mode}"
     deepeval_evaluator._write_results(
         results_dir, prefix, results, evaluation_time, config
     )
@@ -127,7 +123,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
     parser.add_argument("--results-dir", type=Path, default=DEFAULT_RESULTS_DIR)
     parser.add_argument(
-        "--benchmark", choices=sorted(DEFAULT_QUESTION_FILES), default="hotpotqa"
+        "--dataset-name",
+        "--dataset",
+        "--benchmark",
+        dest="dataset_name",
+        default="hotpotqa",
+        help="Dataset name to evaluate against",
     )
     parser.add_argument("--questions-file", type=Path, default=None)
     parser.add_argument("--max-items", type=int, default=None)
