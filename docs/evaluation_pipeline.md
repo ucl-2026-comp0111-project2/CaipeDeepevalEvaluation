@@ -98,6 +98,14 @@ Each metric is configured with:
 | include_reason | True |
 | async_mode | False |
 
+### Context Window Management & DeepEval Integration
+
+According to the official [DeepEval Metrics Documentation](https://docs.confident-ai.com/docs/metrics-introduction), DeepEval formats `retrieval_context` strings directly into judge LLM prompts (such as for [`FaithfulnessMetric`](https://docs.confident-ai.com/docs/metrics-faithfulness) and [`AnswerRelevancyMetric`](https://docs.confident-ai.com/docs/metrics-answer-relevancy)) via [`LLMTestCase`](https://docs.confident-ai.com/docs/evaluation-test-cases) objects.
+
+* **No Built-In Sliding Window**: DeepEval does not automatically perform sliding-window chunking or multi-step windowing across large context items during metric evaluation.
+* **Role of `--max-context-chars`**: To prevent evaluator LLM context window overflow (or token ceiling errors) when processing massive enterprise search results, our client pre-truncates retrieved contexts (`c[:max_context_chars]`) before constructing test cases.
+* **When it Impacts Results**: `--max-context-chars` (defaulting to 12,000–16,000 characters / ~3,000–4,000 tokens per chunk) only affects evaluation scores if a single retrieved document chunk exceeds this length. For standard RAG pipelines with typical chunk sizes (~500–2,000 tokens), it serves purely as a protective ceiling without altering metric precision.
+
 ## 5. Additional Checks
 
 Both pipelines compute retrieval checks from expected document IDs:

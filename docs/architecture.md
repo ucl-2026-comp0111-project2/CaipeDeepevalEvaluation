@@ -54,6 +54,7 @@ flowchart LR
 
 | Component | File | Responsibility |
 | --- | --- | --- |
+| REST API Evaluation Service entry point | src/deepeval_eval/api.py | FastAPI REST API service with Swagger UI (/docs) for async job execution, deduplication, and DB persistence. |
 | Unified evaluator entry point | src/deepeval_eval/deepeval_evaluator.py | Unified CLI runner for benchmark and precomputed evaluations. |
 | Enterprise command entry point | src/deepeval_eval/enterprise_deepeval.py | CLI for EnterpriseRAG-Bench ingestion and evaluation. |
 | HotpotQA command entry point | src/deepeval_eval/hotpotqa_deepeval.py | CLI for HotpotQA ingestion and evaluation. |

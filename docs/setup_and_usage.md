@@ -35,7 +35,10 @@ The dependencies are declared in pyproject.toml:
 | deepeval | Evaluation metrics and test case objects. |
 | httpx | OpenAI compatible LLM endpoint requests. |
 | requests | CAIPE and dataset download requests. |
-| pydantic | Structured schema handling in the LLM adapter. |
+| pydantic | Structured schema handling in the LLM adapter and REST API DTOs. |
+| fastapi | REST API Evaluation Service and OpenAPI Swagger UI. |
+| uvicorn | ASGI web server launcher. |
+| python-multipart | Dataset file upload handling. |
 
 ## Environment Variables
 
@@ -189,8 +192,19 @@ python src\deepeval_eval\hotpotqa_deepeval.py eval --max-items 10 --top-k 5 --ma
 | --data-dir | ingest and eval | Override generated data folder. |
 | --cache-dir | ingest and eval | Override cache folder. |
 | --results-dir | eval | Override results folder. |
+| --max-context-chars | eval | Max character cutoff per retrieved context chunk (default: 12000/16000) to prevent LLM context window overflow. |
 | --reset | ingest | Clear datasource before ingestion. |
 | --skip-ingest | ingest | Generate local data files without sending documents to CAIPE. |
+
+## REST API Evaluation Service & Swagger UI
+
+As an alternative to CLI execution, launch the REST API Evaluation Service:
+
+~~~bash
+uv run python -m deepeval_eval.api
+~~~
+
+Access interactive Swagger UI documentation at `http://localhost:8000/docs`. See [rest_api_service.md](rest_api_service.md) for endpoint details and usage examples.
 
 ## Troubleshooting
 
