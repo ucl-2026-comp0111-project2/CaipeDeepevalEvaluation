@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from deepeval_eval.sinks.composite_sink import CompositeResultSink
 from deepeval_eval.sinks.db_sink import DatabaseResultSink
@@ -10,7 +10,7 @@ from deepeval_eval.sinks.file_sink import FileResultSink
 from deepeval_eval.sinks.metrics_aggregator import (
     calculate_latency_percentiles,
     categorize_failure_causes,
-    compute_metric_averages,
+    compute_all_metric_averages,
     discover_all_metrics,
 )
 from deepeval_eval.sinks.protocol import ResultSink
@@ -38,7 +38,7 @@ __all__ = [
     "CompositeResultSink",
     "write_evaluation_results",
     "discover_all_metrics",
-    "compute_metric_averages",
+    "compute_all_metric_averages",
     "calculate_latency_percentiles",
     "categorize_failure_causes",
 ]

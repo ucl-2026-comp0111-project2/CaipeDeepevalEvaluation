@@ -496,3 +496,47 @@ def test_submit_eval_job_with_upload_cached_positive(tmp_path: Path):
         )
         assert res2.status_code == 202
         assert res2.json()["cached"] is True
+
+
+def test_get_job_results_csv_positive():
+    """Verify GET /jobs/{job_id}/results format=csv returns CSV content."""
+    from deepeval_eval.api import cache_manager, job_manager
+
+    job = job_manager.create_job(
+        "hash_csv_test", {"dataset_name": "enterprise"}, force_rerun=True
+    )
+    job["status"] = JobStatusEnum.COMPLETED
+    sample_results = [
+        {
+            "question_id": "q1",
+            "question": "What is CAIPE?",
+            "actual_output": "CAIPE is an enterprise RAG platform.",
+            "latency": 1.25,
+            "total_tokens": 150,
+            "metrics": {"AnswerRelevancyMetric": {"score": 1.0, "reason": "Relevant"}},
+        }
+    ]
+    cache_manager.save_job_payload(job["job_id"], sample_results)
+
+    response = client.get(f"/jobs/{job['job_id']}/results?format=csv")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "text/csv; charset=utf-8"
+    disp = response.headers["content-disposition"]
+    assert f"attachment; filename=job_{job['job_id']}_results.csv" in disp
+    assert "question_id,benchmark" in response.text
+    assert "What is CAIPE?" in response.text
+    assert "AVERAGE_METRICS" in response.text
+
+
+def test_get_job_results_invalid_format():
+    """Verify GET /jobs/{job_id}/results with unsupported format returns HTTP 400."""
+    from deepeval_eval.api import job_manager
+
+    job = job_manager.create_job(
+        "hash_invalid_format_test", {"dataset_name": "enterprise"}, force_rerun=True
+    )
+    job["status"] = JobStatusEnum.COMPLETED
+
+    response = client.get(f"/jobs/{job['job_id']}/results?format=invalid_fmt")
+    assert response.status_code == 400
+    assert "Unsupported format" in response.json()["detail"]

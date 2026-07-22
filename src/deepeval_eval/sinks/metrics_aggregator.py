@@ -28,6 +28,29 @@ def compute_metric_averages(
     return averages
 
 
+def compute_all_metric_averages(results: list[dict[str, Any]]) -> dict[str, float]:
+    """Compute average scores for all evaluator and retrieval metrics."""
+    from deepeval_eval.metrics import get_metric_column_name
+
+    discovered = discover_all_metrics(results)
+    evaluator_averages = compute_metric_averages(results, discovered)
+
+    all_averages = {
+        get_metric_column_name(m_name): score
+        for m_name, score in evaluator_averages.items()
+    }
+
+    n = len(results)
+    all_averages["retrieval_recall"] = (
+        sum(r.get("doc_id_recall") or 0.0 for r in results) / n if n else 0.0
+    )
+    all_averages["retrieval_precision"] = (
+        sum(r.get("doc_id_precision") or 0.0 for r in results) / n if n else 0.0
+    )
+
+    return all_averages
+
+
 def calculate_latency_percentiles(latencies: list[float]) -> tuple[float, float]:
     """Calculate P50 and P95 latency metrics from a list of latencies."""
     if not latencies:

@@ -10,10 +10,11 @@ from deepeval_eval.sinks import (
     ResultSink,
     calculate_latency_percentiles,
     categorize_failure_causes,
-    compute_metric_averages,
+    compute_all_metric_averages,
     discover_all_metrics,
     write_evaluation_results,
 )
+from deepeval_eval.sinks.metrics_aggregator import compute_metric_averages
 
 
 def _mock_record(ar_score=0.9, fa_score=0.8, custom_score=0.95):
@@ -22,10 +23,24 @@ def _mock_record(ar_score=0.9, fa_score=0.8, custom_score=0.95):
         "question": "What is AI?",
         "latency": 1.2,
         "total_tokens": 150,
+        "doc_id_recall": 1.0,
+        "doc_id_precision": 0.5,
         "metrics": {
-            "AnswerRelevancyMetric": {"score": ar_score, "success": True, "reason": "Good"},
-            "FaithfulnessMetric": {"score": fa_score, "success": True, "reason": "Faithful"},
-            "CustomNewMetric": {"score": custom_score, "success": True, "reason": "Custom ok"},
+            "AnswerRelevancyMetric": {
+                "score": ar_score,
+                "success": True,
+                "reason": "Good",
+            },
+            "FaithfulnessMetric": {
+                "score": fa_score,
+                "success": True,
+                "reason": "Faithful",
+            },
+            "CustomNewMetric": {
+                "score": custom_score,
+                "success": True,
+                "reason": "Custom ok",
+            },
         },
     }
 
@@ -40,9 +55,20 @@ def test_discover_all_metrics():
 
 def test_compute_metric_averages():
     records = [_mock_record(ar_score=0.8), _mock_record(ar_score=1.0)]
-    averages = compute_metric_averages(records, ["AnswerRelevancyMetric", "FaithfulnessMetric"])
+    averages = compute_metric_averages(
+        records, ["AnswerRelevancyMetric", "FaithfulnessMetric"]
+    )
     assert averages["AnswerRelevancyMetric"] == 0.9
     assert averages["FaithfulnessMetric"] == 0.8
+
+
+def test_compute_all_metric_averages():
+    records = [_mock_record(ar_score=0.8), _mock_record(ar_score=1.0)]
+    averages = compute_all_metric_averages(records)
+    assert averages["answer_relevancy"] == 0.9
+    assert averages["faithfulness"] == 0.8
+    assert averages["retrieval_recall"] == 1.0
+    assert averages["retrieval_precision"] == 0.5
 
 
 def test_calculate_latency_percentiles():
@@ -96,14 +122,42 @@ def test_csv_contains_all_metric_scores_and_reasons(tmp_path: Path):
         "reference": "CAIPE is an AI platform",
         "actual_output": "CAIPE is an AI platform",
         "metrics": {
-            "AnswerRelevancyMetric": {"score": 0.92, "success": True, "reason": "Highly relevant answer"},
-            "FaithfulnessMetric": {"score": 0.88, "success": True, "reason": "Faithful to context"},
-            "AnswerCorrectnessMetric": {"score": 0.95, "success": True, "reason": "Factually correct"},
-            "ContextualRelevancyMetric": {"score": 0.85, "success": True, "reason": "Relevant context"},
-            "ContextualPrecisionMetric": {"score": 0.90, "success": True, "reason": "Precise context"},
-            "ContextualRecallMetric": {"score": 0.80, "success": True, "reason": "High recall"},
+            "AnswerRelevancyMetric": {
+                "score": 0.92,
+                "success": True,
+                "reason": "Highly relevant answer",
+            },
+            "FaithfulnessMetric": {
+                "score": 0.88,
+                "success": True,
+                "reason": "Faithful to context",
+            },
+            "AnswerCorrectnessMetric": {
+                "score": 0.95,
+                "success": True,
+                "reason": "Factually correct",
+            },
+            "ContextualRelevancyMetric": {
+                "score": 0.85,
+                "success": True,
+                "reason": "Relevant context",
+            },
+            "ContextualPrecisionMetric": {
+                "score": 0.90,
+                "success": True,
+                "reason": "Precise context",
+            },
+            "ContextualRecallMetric": {
+                "score": 0.80,
+                "success": True,
+                "reason": "High recall",
+            },
             "MRRMetric": {"score": 1.0, "success": True, "reason": "Top rank match"},
-            "NDCGAtKMetric": {"score": 0.99, "success": True, "reason": "High NDCG gain"},
+            "NDCGAtKMetric": {
+                "score": 0.99,
+                "success": True,
+                "reason": "High NDCG gain",
+            },
         },
     }
 
@@ -185,11 +239,22 @@ def test_database_result_sink_query_runs(mock_get_conn):
     mock_get_conn.return_value = mock_conn
     mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
     mock_cursor.fetchall.return_value = [
-        {"run_id": "run_1", "batch_id": "b1", "config_name": "cfg", "loaded_at": "2026-07-22", "config_json": "{}"}
+        {
+            "run_id": "run_1",
+            "batch_id": "b1",
+            "config_name": "cfg",
+            "loaded_at": "2026-07-22",
+            "config_json": "{}",
+        }
     ]
 
-    with patch.dict("sys.modules", {"psycopg2": MagicMock(), "psycopg2.extras": mock_psycopg2_extras}):
-        db_sink = DatabaseResultSink(connection_string="postgresql://user:pass@localhost:5432/db")
+    with patch.dict(
+        "sys.modules",
+        {"psycopg2": MagicMock(), "psycopg2.extras": mock_psycopg2_extras},
+    ):
+        db_sink = DatabaseResultSink(
+            connection_string="postgresql://user:pass@localhost:5432/db"
+        )
         runs = db_sink.query_runs(limit=5)
 
     assert len(runs) == 1
@@ -198,7 +263,9 @@ def test_database_result_sink_query_runs(mock_get_conn):
 
 def test_database_result_sink_missing_psycopg2():
     with patch.dict("sys.modules", {"psycopg2": None, "psycopg2.extras": None}):
-        db_sink = DatabaseResultSink(connection_string="postgresql://user:pass@localhost:5432/db")
+        db_sink = DatabaseResultSink(
+            connection_string="postgresql://user:pass@localhost:5432/db"
+        )
         runs = db_sink.query_runs(limit=5)
         assert runs == []
 

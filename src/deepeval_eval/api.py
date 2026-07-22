@@ -18,6 +18,7 @@ from fastapi import (
     File,
     HTTPException,
     Query,
+    Response,
     UploadFile,
     status,
 )
@@ -35,6 +36,7 @@ from deepeval_eval.eval_engine import EvalConfig, _build_rag_client, run_evaluat
 from deepeval_eval.io_utils import sanitize_path
 from deepeval_eval.prompt_style import DEFAULT_PROMPT_STYLE
 from deepeval_eval.sinks import DatabaseResultSink
+from deepeval_eval.sinks.file_sink import format_results_as_csv
 
 # ---------------------------------------------------------------------------
 # Pydantic Request & Response Models (DTOs)
@@ -618,11 +620,13 @@ def get_job_status(job_id: str) -> JobResponse:
 
 @app.get(
     "/jobs/{job_id}/results",
-    response_model=EvaluationResultsResponse,
     summary="Get Evaluation Job Results",
 )
-def get_job_results(job_id: str) -> EvaluationResultsResponse:
-    """Retrieve evaluation results and detailed metrics for a completed job."""
+def get_job_results(
+    job_id: str,
+    format: str = Query("json", description="Output format: 'json' or 'csv'"),
+) -> Any:
+    """Retrieve evaluation results for a completed job in JSON or CSV format."""
     job = job_manager.get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
@@ -639,8 +643,34 @@ def get_job_results(job_id: str) -> EvaluationResultsResponse:
             detail=f"Job '{job_id}' is still in status '{job['status']}'",
         )
 
+    results = job_manager.get_job_results_payload(job_id)
+
+    requested_format = format.lower()
+    if requested_format not in ("json", "csv"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported format '{format}'. Supported formats are 'json' and 'csv'.",
+        )
+
+    if requested_format == "csv":
+        datasource = job.get("config_args", {}).get("dataset_name", "enterprise")
+        evaluation_time = job.get("evaluation_time", 0.0)
+        csv_content = format_results_as_csv(
+            results=results,
+            evaluation_time=evaluation_time,
+            datasource=datasource,
+        )
+        headers = {
+            "Content-Disposition": f"attachment; filename=job_{job_id}_results.csv"
+        }
+        return Response(
+            content=csv_content,
+            media_type="text/csv",
+            headers=headers,
+        )
+
     job_data = dict(job)
-    job_data["results"] = job_manager.get_job_results_payload(job_id)
+    job_data["results"] = results
     return EvaluationResultsResponse(**job_data)
 
 
