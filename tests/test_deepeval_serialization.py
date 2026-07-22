@@ -126,7 +126,7 @@ def test_precomputed_write_results_serialization_positive(tmp_path: Path, sample
     # Should write successfully without exceptions
     write_results_precomputed(
         results_dir=tmp_path,
-        benchmark="hotpotqa",
+        dataset_name="hotpotqa",
         answer_mode="short",
         results=sample_results,
         evaluation_time=10.0,
@@ -143,7 +143,7 @@ def test_precomputed_write_results_serialization_negative(tmp_path: Path, sample
     # Should write successfully without exceptions due to sanitization
     write_results_precomputed(
         results_dir=tmp_path,
-        benchmark="hotpotqa",
+        dataset_name="hotpotqa",
         answer_mode="short",
         results=sample_results,
         evaluation_time=10.0,
