@@ -153,7 +153,7 @@ export CAIPE_DATASOURCE_ID="enterprise_rag_bench"
 export QUESTIONS_PATH="/path/to/enterprise_rag_bench_questions.jsonl"
 
 # Fetch OIDC credentials from Kubernetes
-export KUBECONFIG="${KUBECONFIG:-/Users/alexanghh/.kube/config-proxmox}"
+export KUBECONFIG="${KUBECONFIG:-${HOME}/.kube/config}"
 CLIENT_ID=$(kubectl get secret caipe-ui-secret -n caipe \
     -o jsonpath='{.data.OIDC_CLIENT_ID}' | base64 --decode)
 CLIENT_SECRET=$(kubectl get secret caipe-ui-secret -n caipe \

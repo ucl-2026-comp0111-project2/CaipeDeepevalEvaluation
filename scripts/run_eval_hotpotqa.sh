@@ -12,7 +12,7 @@ fi
 
 # Override configuration variables for HotpotQA
 export CAIPE_DATASOURCE_ID="hotpotqa_sample"
-export QUESTIONS_PATH="/Users/alexanghh/development/caipe_ragas/rag_eval/data/hotpotqa_full_questions.jsonl"
+export QUESTIONS_PATH="${QUESTIONS_PATH:-../caipe_ragas/rag_eval/data/hotpotqa_full_questions.jsonl}"
 
 # Fetch OIDC credentials from Kubernetes
 CLIENT_ID=$(kubectl get secret caipe-ui-secret -n caipe -o jsonpath='{.data.OIDC_CLIENT_ID}' | base64 --decode)
@@ -25,9 +25,9 @@ export CAIPE_OIDC_TOKEN=$(curl -sk -X POST "https://keycloak.caipe.homelab/realm
   -d "grant_type=client_credentials" | jq -r '.access_token')
 
 # Run deepeval evaluation using uv run with the same dataset and settings as Ragas
-uv run python3 src/deepeval_eval/hotpotqa_deepeval.py \
-  --auth-token "$CAIPE_OIDC_TOKEN" \
+uv run python3 src/deepeval_eval/deepeval_evaluator.py \
   eval \
+  --dataset-name hotpotqa \
   --datasource-id "${CAIPE_DATASOURCE_ID}" \
   --questions-file "${QUESTIONS_PATH}" \
   --agentic \

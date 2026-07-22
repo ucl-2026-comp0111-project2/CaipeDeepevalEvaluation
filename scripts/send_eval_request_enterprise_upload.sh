@@ -12,7 +12,7 @@ if [ -f .env ]; then
 fi
 
 API_URL="${API_URL:-http://localhost:8000}"
-DEFAULT_ENTERPRISE_PATH="/Users/alexanghh/development/caipe_ragas/rag_eval/data/enterprise_rag_bench_questions.jsonl"
+DEFAULT_ENTERPRISE_PATH="${DEFAULT_ENTERPRISE_PATH:-../caipe_ragas/rag_eval/data/enterprise_rag_bench_questions.jsonl}"
 if [ -z "$QUESTIONS_PATH" ] || [ ! -f "$QUESTIONS_PATH" ] || [[ "$QUESTIONS_PATH" == *"hotpotqa"* ]]; then
   QUESTIONS_PATH="$DEFAULT_ENTERPRISE_PATH"
 fi
