@@ -28,11 +28,10 @@ export CAIPE_AUTH_TOKEN=$(curl -sk -X POST "https://keycloak.caipe.homelab/realm
 
 uv run python3 src/deepeval_eval/deepeval_evaluator.py \
   eval \
-  --precompute \
+  --oracle-testing \
   --datasource-id "${CAIPE_DATASOURCE_ID}" \
   --questions-file "${QUESTIONS_PATH}" \
   --dataset-name hotpotqa \
-  --answer-mode reference \
   --limit-per-category 50 \
   --top-k 5 \
   "$@"

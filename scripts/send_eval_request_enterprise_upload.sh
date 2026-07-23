@@ -12,13 +12,10 @@ if [ -f .env ]; then
 fi
 
 API_URL="${API_URL:-http://localhost:8000}"
-DEFAULT_ENTERPRISE_PATH="${DEFAULT_ENTERPRISE_PATH:-../caipe_ragas/rag_eval/data/enterprise_rag_bench_questions.jsonl}"
-if [ -z "$QUESTIONS_PATH" ] || [ ! -f "$QUESTIONS_PATH" ] || [[ "$QUESTIONS_PATH" == *"hotpotqa"* ]]; then
-  QUESTIONS_PATH="$DEFAULT_ENTERPRISE_PATH"
-fi
-DATASET_NAME="${DATASET_NAME:-enterprise}"
-DATASOURCE_ID="${DATASOURCE_ID:-enterprise_rag_bench}"
-ANSWER_MODE="${ANSWER_MODE:-reference}"
+QUESTIONS_PATH="${QUESTIONS_PATH:-${ENTERPRISE_QUESTIONS_PATH}}"
+DATASET_NAME="${DATASET_NAME:-${ENTERPRISE_DATASET_NAME}}"
+DATASOURCE_ID="${DATASOURCE_ID:-${ENTERPRISE_CAIPE_DATASOURCE_ID}}"
+ANSWER_MODE="${ANSWER_MODE:-generate}"
 MAX_ITEMS="${MAX_ITEMS:-1}"
 LIMIT_PER_CATEGORY="${LIMIT_PER_CATEGORY:-}"
 TOP_K="${TOP_K:-5}"
@@ -40,8 +37,47 @@ if [ -n "$LIMIT_PER_CATEGORY" ]; then
   QUERY_PARAMS="${QUERY_PARAMS}&limit_per_category=${LIMIT_PER_CATEGORY}"
 fi
 
+# Retrieve OIDC token from Keycloak (or static DEEPEVAL_API_KEY fallback if unconfigured)
+if [ -z "$CAIPE_OIDC_TOKEN" ] && command -v kubectl >/dev/null 2>&1; then
+  if kubectl get secret caipe-ui-secret -n caipe >/dev/null 2>&1; then
+    CLIENT_ID=$(kubectl get secret caipe-ui-secret -n caipe -o jsonpath='{.data.OIDC_CLIENT_ID}' | base64 --decode 2>/dev/null || true)
+    CLIENT_SECRET=$(kubectl get secret caipe-ui-secret -n caipe -o jsonpath='{.data.OIDC_CLIENT_SECRET}' | base64 --decode 2>/dev/null || true)
+
+    if [ -n "$CLIENT_ID" ] && [ -n "$CLIENT_SECRET" ]; then
+      KEYCLOAK_URL="${KEYCLOAK_URL:-https://keycloak.caipe.homelab/realms/caipe/protocol/openid-connect/token}"
+      FETCHED_TOKEN=$(curl -sk -X POST "$KEYCLOAK_URL" \
+        -d "client_id=${CLIENT_ID}" \
+        -d "client_secret=${CLIENT_SECRET}" \
+        -d "grant_type=client_credentials" | jq -r '.access_token // empty' 2>/dev/null || true)
+      if [ -n "$FETCHED_TOKEN" ] && [ "$FETCHED_TOKEN" != "null" ]; then
+        export CAIPE_OIDC_TOKEN="$FETCHED_TOKEN"
+        echo "CAIPE_OIDC_TOKEN retrieved successfully from Keycloak OIDC endpoint."
+      fi
+    fi
+
+    if [ -z "$CAIPE_OIDC_TOKEN" ]; then
+      FETCHED_KEY=$(kubectl get secret caipe-ui-secret -n caipe -o jsonpath='{.data.AGENTGATEWAY_TARGETS_TOKEN}' | base64 --decode 2>/dev/null || true)
+      if [ -z "$FETCHED_KEY" ]; then
+        FETCHED_KEY=$(kubectl get secret caipe-ui-secret -n caipe -o jsonpath='{.data.NEXTAUTH_SECRET}' | base64 --decode 2>/dev/null || true)
+      fi
+      if [ -n "$FETCHED_KEY" ]; then
+        export DEEPEVAL_API_KEY="$FETCHED_KEY"
+      fi
+    fi
+  fi
+fi
+
+AUTH_TOKEN="${CAIPE_OIDC_TOKEN:-${DEEPEVAL_API_KEY}}"
+if [ -z "$AUTH_TOKEN" ]; then
+  echo "Error: No authentication credentials found (CAIPE_OIDC_TOKEN or DEEPEVAL_API_KEY is not set and Kubernetes secret retrieval failed)."
+  echo "Please set CAIPE_OIDC_TOKEN or DEEPEVAL_API_KEY in your .env file or export it in your terminal."
+  exit 1
+fi
+
+AUTH_HEADER=(-H "Authorization: Bearer ${AUTH_TOKEN}")
+
 # Upload dataset file and submit eval job
-RESPONSE=$(curl -s -X POST "${API_URL}/eval/jobs/upload?${QUERY_PARAMS}" \
+RESPONSE=$(curl -sS --fail-with-body "${AUTH_HEADER[@]}" -X POST "${API_URL}/eval/jobs/upload?${QUERY_PARAMS}" \
   -F "file=@${QUESTIONS_PATH}")
 
 echo "Response from API:"
@@ -60,7 +96,7 @@ echo "Polling job status at ${API_URL}/jobs/${JOB_ID}..."
 
 # Poll job status until complete or failed
 while true; do
-  STATUS_RESP=$(curl -s "${API_URL}/jobs/${JOB_ID}")
+  STATUS_RESP=$(curl -s "${AUTH_HEADER[@]}" "${API_URL}/jobs/${JOB_ID}")
   JOB_STATUS=$(echo "$STATUS_RESP" | jq -r '.status')
   echo "[$(date +'%H:%M:%S')] Job status: ${JOB_STATUS}"
 
@@ -76,10 +112,10 @@ while true; do
     JSON_FILE="${RESULTS_DIR}/job_${JOB_ID}_results.json"
     
     # Save CSV option for download
-    curl -s "${API_URL}/jobs/${JOB_ID}/results?format=csv" > "$CSV_FILE"
+    curl -s "${AUTH_HEADER[@]}" "${API_URL}/jobs/${JOB_ID}/results?format=csv" > "$CSV_FILE"
     
     # Save and print JSON to console
-    curl -s "${API_URL}/jobs/${JOB_ID}/results?format=json" > "$JSON_FILE"
+    curl -s "${AUTH_HEADER[@]}" "${API_URL}/jobs/${JOB_ID}/results?format=json" > "$JSON_FILE"
     cat "$JSON_FILE" | jq . 2>/dev/null || cat "$JSON_FILE"
     
     echo ""

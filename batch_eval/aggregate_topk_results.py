@@ -10,9 +10,10 @@ pairs with aggregate_results.py) — this fills that gap. Run this right
 after run_batch_topk.py finishes.
 """
 
-import pandas as pd
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
+
+import pandas as pd
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 RESULTS_DIR = REPO_ROOT / "results"
@@ -29,7 +30,7 @@ CONFIGS = [
 csv_files = sorted(
     RESULTS_DIR.glob("hotpotqa_deepeval_results_*.csv"),
     key=lambda p: p.stat().st_mtime,
-)[-len(CONFIGS):]
+)[-len(CONFIGS) :]
 
 if len(csv_files) < len(CONFIGS):
     raise SystemExit(
@@ -52,7 +53,9 @@ for cfg, csv_file in zip(CONFIGS, csv_files):
 
 combined = pd.concat(all_dfs, ignore_index=True)
 combined.to_csv(RESULTS_DIR / "batch_combined_results_topk.csv", index=False)
-combined.to_json(RESULTS_DIR / "batch_combined_results_topk.json", orient="records", indent=2)
+combined.to_json(
+    RESULTS_DIR / "batch_combined_results_topk.json", orient="records", indent=2
+)
 
 print(f"Batch ID: {batch_id}")
 print(f"Combined {len(combined)} rows from {len(CONFIGS)} configs")

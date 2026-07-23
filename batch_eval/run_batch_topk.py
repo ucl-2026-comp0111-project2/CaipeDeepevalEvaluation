@@ -11,9 +11,19 @@ configs = [
 
 for cfg in configs:
     print(f"\n=== Running config: {cfg['name']} ===")
-    subprocess.run([
-        "python", str(REPO_ROOT / "src/deepeval_eval/hotpotqa_deepeval.py"), "eval",
-        "--max-items", "50",
-        "--top-k", str(cfg["top_k"]),
-        "--max-context-chars", str(cfg["max_context_chars"]),
-    ], cwd=REPO_ROOT)
+    subprocess.run(
+        [
+            "python",
+            str(REPO_ROOT / "src/deepeval_eval/deepeval_evaluator.py"),
+            "eval",
+            "--dataset-name",
+            "hotpotqa",
+            "--max-items",
+            "50",
+            "--top-k",
+            str(cfg["top_k"]),
+            "--max-context-chars",
+            str(cfg["max_context_chars"]),
+        ],
+        cwd=REPO_ROOT,
+    )

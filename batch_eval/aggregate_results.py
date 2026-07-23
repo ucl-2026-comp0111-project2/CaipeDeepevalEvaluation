@@ -1,7 +1,8 @@
-import pandas as pd
-from pathlib import Path
 import json
 from datetime import datetime
+from pathlib import Path
+
+import pandas as pd
 
 # Locate repo root relative to this script's location (works regardless of cwd)
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -14,9 +15,8 @@ configs = json.load(open(CONFIGS_FILE))
 # Auto-detect the most recently written result CSVs (one per config),
 
 csv_files = sorted(
-    RESULTS_DIR.glob("precomputed_deepeval_*.csv"),
-    key=lambda p: p.stat().st_mtime
-)[-len(configs):]
+    RESULTS_DIR.glob("precomputed_deepeval_*.csv"), key=lambda p: p.stat().st_mtime
+)[-len(configs) :]
 
 # One shared batch_id for this whole aggregation run (groups all configs together)
 batch_id = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -41,7 +41,9 @@ combined = pd.concat(all_dfs, ignore_index=True)
 
 
 combined.to_csv(RESULTS_DIR / "batch_combined_results.csv", index=False)
-combined.to_json(RESULTS_DIR / "batch_combined_results.json", orient="records", indent=2)
+combined.to_json(
+    RESULTS_DIR / "batch_combined_results.json", orient="records", indent=2
+)
 
 print(f"Batch ID: {batch_id}")
 print(f"Combined {len(combined)} rows from {len(configs)} configs")

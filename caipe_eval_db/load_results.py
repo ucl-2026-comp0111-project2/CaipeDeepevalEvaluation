@@ -130,8 +130,10 @@ def load_combined(conn, combined_csv_path):
             template="(%s, %s, %s, %s::jsonb)",
         )
         total_rows += len(rows)
-        print(f"Loaded run '{run_id}' (config: {config_name}) — {len(rows)} rows, "
-              f"config params: {list(config_json.keys())}")
+        print(
+            f"Loaded run '{run_id}' (config: {config_name}) — {len(rows)} rows, "
+            f"config params: {list(config_json.keys())}"
+        )
 
     conn.commit()
     print(f"\nDone — {total_rows} total rows across {df['run_id'].nunique()} runs.")
@@ -139,8 +141,11 @@ def load_combined(conn, combined_csv_path):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--combined-csv", required=True,
-                    help="Path to batch_combined_results.csv from aggregateresult.py")
+    p.add_argument(
+        "--combined-csv",
+        required=True,
+        help="Path to batch_combined_results.csv from aggregateresult.py",
+    )
     args = p.parse_args()
 
     conn = get_conn()
