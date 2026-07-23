@@ -618,7 +618,7 @@ app = FastAPI(
 )
 
 
-@app.get("/", summary="Root Endpoint")
+@app.get("/", summary="Root Endpoint", include_in_schema=False)
 def root_endpoint(
     user: UserContext = Depends(get_current_user),
 ) -> dict[str, Any]:
