@@ -666,6 +666,7 @@ app.include_router(telemetry_router)
     response_model=JobResponse,
     status_code=status.HTTP_202_ACCEPTED,
     summary="Submit Evaluation Job",
+    tags=["Evaluation Jobs"],
 )
 def submit_eval_job(
     request: EvaluationRequest,
@@ -692,6 +693,7 @@ def submit_eval_job(
     response_model=JobResponse,
     status_code=status.HTTP_202_ACCEPTED,
     summary="Submit Evaluation Job with Dataset File Upload",
+    tags=["Evaluation Jobs"],
 )
 async def submit_eval_job_with_upload(
     background_tasks: BackgroundTasks,
@@ -772,6 +774,7 @@ async def submit_eval_job_with_upload(
     "/jobs",
     response_model=list[JobResponse],
     summary="List Evaluation Jobs",
+    tags=["Evaluation Jobs"],
 )
 def list_jobs(
     user: UserContext = Depends(get_current_user),
@@ -784,6 +787,7 @@ def list_jobs(
     "/jobs/{job_id}",
     response_model=JobResponse,
     summary="Poll Job Status",
+    tags=["Evaluation Jobs"],
 )
 def get_job_status(
     job_id: str,
@@ -799,6 +803,7 @@ def get_job_status(
 @app.get(
     "/jobs/{job_id}/results",
     summary="Get Evaluation Job Results",
+    tags=["Evaluation Results"],
 )
 def get_job_results(
     job_id: str,
@@ -856,6 +861,7 @@ def get_job_results(
 @app.post(
     "/jobs/{job_id}/save-db",
     summary="Save Completed Job Results to Database",
+    tags=["Evaluation Results"],
 )
 def save_job_results_to_db(
     job_id: str,
@@ -904,6 +910,7 @@ def save_job_results_to_db(
 @app.get(
     "/results/db",
     summary="Query Database Evaluation Runs",
+    tags=["Evaluation Results"],
 )
 def query_db_evaluation_runs(
     limit: int = Query(10, ge=1, le=100),
