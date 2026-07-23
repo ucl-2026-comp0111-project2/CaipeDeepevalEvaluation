@@ -271,3 +271,107 @@ def test_database_result_sink_missing_psycopg2():
 
         # Ensure save does not crash when psycopg2 is missing
         db_sink.save(Path("/tmp"), "test", [], 1.0, {})
+
+
+def test_database_result_sink_get_connection_positive():
+    """Verify DatabaseResultSink._get_connection connects using connection_string or env vars."""
+    mock_psycopg2 = MagicMock()
+    with patch.dict("sys.modules", {"psycopg2": mock_psycopg2}):
+        sink = DatabaseResultSink("postgresql://user:pass@localhost:5432/db")
+        sink._get_connection()
+        mock_psycopg2.connect.assert_called_with(
+            "postgresql://user:pass@localhost:5432/db"
+        )
+
+        mock_psycopg2.reset_mock()
+        sink_env = DatabaseResultSink()
+        with patch.dict(
+            "os.environ",
+            {
+                "POSTGRES_HOST": "db.host",
+                "POSTGRES_PORT": "5433",
+                "POSTGRES_DB": "test_db",
+                "POSTGRES_USER": "test_user",
+                "POSTGRES_PASSWORD": "test_password",
+            },
+        ):
+            sink_env._get_connection()
+            mock_psycopg2.connect.assert_called_with(
+                host="db.host",
+                port="5433",
+                dbname="test_db",
+                user="test_user",
+                password="test_password",
+                sslmode="prefer",
+            )
+
+
+def test_database_result_sink_save_positive(tmp_path: Path):
+    """Verify DatabaseResultSink.save executes DB insertion and commits."""
+    mock_psycopg2 = MagicMock()
+    mock_extras = MagicMock()
+    mock_conn = MagicMock()
+    mock_cursor = MagicMock()
+    mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+
+    with (
+        patch.dict(
+            "sys.modules",
+            {"psycopg2": mock_psycopg2, "psycopg2.extras": mock_extras},
+        ),
+        patch.object(DatabaseResultSink, "_get_connection", return_value=mock_conn),
+    ):
+        sink = DatabaseResultSink()
+        sink.save(
+            tmp_path,
+            "prefix",
+            [_mock_record()],
+            1.0,
+            {"batch_id": "b123", "run_id": "r123", "config_name": "test_cfg"},
+        )
+        assert mock_cursor.execute.call_count >= 3
+        mock_extras.execute_values.assert_called_once()
+        mock_conn.commit.assert_called_once()
+
+
+def test_database_result_sink_save_connection_failure_negative(tmp_path: Path):
+    """Verify DatabaseResultSink.save handles connection failure gracefully."""
+    mock_psycopg2 = MagicMock()
+    mock_extras = MagicMock()
+
+    with (
+        patch.dict(
+            "sys.modules",
+            {"psycopg2": mock_psycopg2, "psycopg2.extras": mock_extras},
+        ),
+        patch.object(
+            DatabaseResultSink,
+            "_get_connection",
+            side_effect=Exception("Connection refused"),
+        ),
+    ):
+        sink = DatabaseResultSink()
+        # Should not raise exception
+        sink.save(tmp_path, "prefix", [_mock_record()], 1.0, {})
+
+
+def test_database_result_sink_save_execution_failure_negative(tmp_path: Path):
+    """Verify DatabaseResultSink.save rolls back on execution error."""
+    mock_psycopg2 = MagicMock()
+    mock_extras = MagicMock()
+    mock_conn = MagicMock()
+    mock_conn.closed = False
+    mock_cursor = MagicMock()
+    mock_cursor.execute.side_effect = Exception("DB Execution error")
+    mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+
+    with (
+        patch.dict(
+            "sys.modules",
+            {"psycopg2": mock_psycopg2, "psycopg2.extras": mock_extras},
+        ),
+        patch.object(DatabaseResultSink, "_get_connection", return_value=mock_conn),
+    ):
+        sink = DatabaseResultSink()
+        sink.save(tmp_path, "prefix", [_mock_record()], 1.0, {})
+        mock_conn.rollback.assert_called_once()
