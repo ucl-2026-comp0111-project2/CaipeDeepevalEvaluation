@@ -54,18 +54,21 @@ class AgenticRagAdapter(BaseRagClient):
         results_dir: Any = None,
         fail_on_error: bool = False,
         datasource_id: str | None = None,
+        agent_id: str | None = None,
     ) -> None:
         agentic_rag_module = __import__(
             "deepeval_eval.agentic_rag", fromlist=["AgenticRetriever"]
         )
         logdir = str(results_dir / "logs") if results_dir else "./logs"
         self.datasource_id = datasource_id
+        self.agent_id = agent_id
         self.retriever = agentic_rag_module.AgenticRetriever(
             supervisor_url=supervisor_url,
             timeout=200.0,
             logdir=logdir,
             fail_on_error=fail_on_error,
             datasource_id=datasource_id,
+            agent_id=agent_id,
         )
 
     def query(

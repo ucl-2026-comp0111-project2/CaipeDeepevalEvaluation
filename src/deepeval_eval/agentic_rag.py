@@ -269,9 +269,11 @@ class AgenticRetriever(BaseRetriever):
         supervisor_url: str | None = None,  # for compatibility
         fail_on_error: bool = False,
         datasource_id: str | None = None,
+        agent_id: str | None = None,
     ) -> None:
         super().__init__()
         self.datasource_id = datasource_id
+        self.agent_id = agent_id or os.getenv("CAIPE_AGENT_ID") or "hello-world"
         self.agent_api_url = (
             agent_api_url
             or supervisor_url
@@ -435,7 +437,7 @@ class AgenticRetriever(BaseRetriever):
             if token:
                 headers["Authorization"] = f"Bearer {token}"
 
-            agent_id = os.getenv("CAIPE_AGENT_ID") or "hello-world"
+            agent_id = self.agent_id
 
             try:
                 # Step 1: Create a new conversation session
@@ -760,6 +762,7 @@ class AgenticRAG(BaseRAG):
         insecure: bool = False,
         use_a2a: bool | None = None,
         trace_log: bool = False,
+        agent_id: str | None = None,
     ) -> None:
         super().__init__(
             llm_client=None,
@@ -771,6 +774,7 @@ class AgenticRAG(BaseRAG):
                 use_a2a=use_a2a,
                 trace_log=trace_log,
                 logdir=logdir,
+                agent_id=agent_id,
             ),
             logdir=logdir,
         )

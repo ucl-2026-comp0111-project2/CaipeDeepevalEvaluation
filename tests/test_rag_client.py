@@ -119,6 +119,7 @@ def test_agentic_rag_adapter_datasource_id_forwarding(tmp_path: Path) -> None:
             logdir=str(tmp_path / "logs"),
             fail_on_error=False,
             datasource_id="enterprise_rag_bench",
+            agent_id=None,
         )
         res = adapter.query("Enterprise Query?", datasource_id="override_ds")
         mock_retriever.retrieve.assert_called_with(
@@ -131,3 +132,25 @@ def test_agentic_rag_adapter_datasource_id_forwarding(tmp_path: Path) -> None:
         mock_retriever.retrieve.assert_called_with(
             "Enterprise Query 2?", k=3, datasource_id="enterprise_rag_bench"
         )
+
+
+def test_agentic_rag_adapter_agent_id_forwarding(tmp_path: Path) -> None:
+    mock_retriever = MagicMock()
+    with patch(
+        "deepeval_eval.agentic_rag.AgenticRetriever", return_value=mock_retriever
+    ) as mock_init:
+        adapter = AgenticRagAdapter(
+            supervisor_url="http://localhost:8000",
+            results_dir=tmp_path,
+            agent_id="custom-agent-v2",
+        )
+        mock_init.assert_called_once_with(
+            supervisor_url="http://localhost:8000",
+            timeout=200.0,
+            logdir=str(tmp_path / "logs"),
+            fail_on_error=False,
+            datasource_id=None,
+            agent_id="custom-agent-v2",
+        )
+        assert adapter.agent_id == "custom-agent-v2"
+

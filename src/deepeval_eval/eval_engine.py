@@ -54,6 +54,7 @@ class EvalConfig:
     llm_api_key: str | None = None
     llm_model: str | None = None
     agentic: bool = False
+    agent_id: str | None = None
     supervisor_url: str | None = None
     fail_on_error: bool = False
     oracle_retrieval: bool = False
@@ -125,6 +126,7 @@ def _build_rag_client(config: EvalConfig, env_values: dict[str, Any]) -> Any:
             results_dir=getattr(config, "results_dir", None),
             fail_on_error=getattr(config, "fail_on_error", False),
             datasource_id=datasource_id,
+            agent_id=getattr(config, "agent_id", None),
         )
     else:
         return build_caipe_client(env_values)

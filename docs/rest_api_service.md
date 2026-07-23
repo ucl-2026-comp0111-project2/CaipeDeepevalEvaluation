@@ -84,6 +84,7 @@ JSON payload used when submitting evaluation jobs via `POST /eval/jobs`.
 | `llm_api_key` | `str \| null` | `null` | - | Custom LLM API key. |
 | `llm_model` | `str \| null` | `null` | - | Custom LLM model name (e.g., `"gpt-4o"`). |
 | `agentic` | `bool` | `false` | - | Route queries through CAIPE supervisor agent (A2A). |
+| `agent_id` | `str \| null` | `null` | - | Target CAIPE agent ID for agentic RAG evaluation (defaults to `CAIPE_AGENT_ID` env var or `"hello-world"`). |
 | `supervisor_url` | `str \| null` | `null` | - | CAIPE supervisor endpoint URL. |
 | `fail_on_error` | `bool` | `false` | - | Fail job loudly if a single query fails. |
 | `oracle_retrieval` | `bool` | `false` | - | Enable question + reference ground truth retrieval. |

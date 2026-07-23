@@ -81,6 +81,11 @@ def _add_eval_args(parser: argparse.ArgumentParser) -> None:
         help="Route queries through caipe-supervisor A2A endpoint",
     )
     parser.add_argument(
+        "--agent-id",
+        default=None,
+        help="CAIPE agent ID for agentic eval (defaults to CAIPE_AGENT_ID env var or hello-world)",
+    )
+    parser.add_argument(
         "--supervisor-url",
         default="http://localhost:8000",
         help="CAIPE supervisor URL for agentic eval",
@@ -161,6 +166,7 @@ def _run_eval(args: argparse.Namespace) -> None:
         llm_api_key=getattr(args, "llm_api_key", None),
         llm_model=getattr(args, "llm_model", None),
         agentic=getattr(args, "agentic", False),
+        agent_id=getattr(args, "agent_id", None),
         supervisor_url=getattr(args, "supervisor_url", "http://localhost:8000"),
         fail_on_error=getattr(args, "fail_on_error", False),
         oracle_retrieval=getattr(args, "oracle_retrieval", False),

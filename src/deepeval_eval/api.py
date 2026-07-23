@@ -103,6 +103,10 @@ class EvaluationRequest(BaseModel):
     agentic: bool = Field(
         default=False, description="Route queries through CAIPE supervisor A2A endpoint"
     )
+    agent_id: str | None = Field(
+        default=None,
+        description="Optional CAIPE agent ID for agentic RAG evaluations",
+    )
     supervisor_url: str | None = Field(default=None, description="CAIPE supervisor URL")
     fail_on_error: bool = Field(
         default=False, description="Fail loudly if a query evaluation fails"
@@ -516,6 +520,7 @@ def execute_evaluation_job(
             llm_api_key=req.llm_api_key,
             llm_model=req.llm_model,
             agentic=req.agentic,
+            agent_id=req.agent_id,
             supervisor_url=req.supervisor_url,
             fail_on_error=req.fail_on_error,
             oracle_retrieval=req.oracle_retrieval,
