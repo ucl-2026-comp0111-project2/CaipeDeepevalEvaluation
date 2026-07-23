@@ -29,11 +29,4 @@ htmlcov/
 .ruff_cache/
 .mypy_cache/
 .DS_Store
-.uv_cache/
-.uv_sync/
-
-# IDE configuration
-.vscode/
-.idea/
-.qwen/
-*.egg-info/
+src/deepeval_eval/config.py
