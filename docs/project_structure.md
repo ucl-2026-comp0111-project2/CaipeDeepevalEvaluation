@@ -15,8 +15,8 @@ This document explains the important files and directories in the repository.
 
 | Path | Type | Purpose |
 | --- | --- | --- |
-| src/deepeval_eval/enterprise_deepeval.py | Python CLI | EnterpriseRAG-Bench ingestion and evaluation. |
-| src/deepeval_eval/hotpotqa_deepeval.py | Python CLI | HotpotQA ingestion and evaluation. |
+| src/deepeval_eval/deepeval_evaluator.py | Python CLI | Unified entrypoint for DeepEval evaluation. |
+| src/deepeval_eval/ingest.py | Python CLI | Standalone entrypoint for dataset ingestion. |
 | scripts/ingest_enterprise.cmd | Windows CMD wrapper | Runs EnterpriseRAG-Bench ingestion with project defaults. |
 | scripts/eval_enterprise.cmd | Windows CMD wrapper | Runs EnterpriseRAG-Bench evaluation with project defaults. |
 | scripts/ingest_hotpotqa.cmd | Windows CMD wrapper | Runs HotpotQA ingestion with project defaults. |

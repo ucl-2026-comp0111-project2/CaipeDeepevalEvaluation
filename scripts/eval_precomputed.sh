@@ -9,8 +9,9 @@ REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 PYTHON_BIN=${PYTHON:-python3}
 
 exec "$PYTHON_BIN" \
-  "$REPO_ROOT/src/deepeval_eval/precomputed_deepeval.py" \
-  --benchmark hotpotqa \
+  "$REPO_ROOT/src/deepeval_eval/deepeval_evaluator.py" \
+  eval \
+  --dataset-name hotpotqa \
+  --oracle-testing \
   --max-items 20 \
-  --answer-mode reference \
   "$@"

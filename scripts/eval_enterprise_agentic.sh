@@ -9,8 +9,9 @@ REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 PYTHON_BIN=${PYTHON:-python3}
 
 exec "$PYTHON_BIN" \
-  "$REPO_ROOT/src/deepeval_eval/enterprise_deepeval.py" \
+  "$REPO_ROOT/src/deepeval_eval/deepeval_evaluator.py" \
   eval \
+  --dataset-name enterprise \
   --agentic \
   --supervisor-url "${CAIPE_SUPERVISOR_URL:-http://localhost:8000}" \
   --max-items 10 \

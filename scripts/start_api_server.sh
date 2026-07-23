@@ -11,10 +11,15 @@ if [ -f .env ]; then
   set +a
 fi
 
+# Enable unauthenticated access for local development
+export ALLOW_UNAUTHENTICATED_ACCESS="${ALLOW_UNAUTHENTICATED_ACCESS:-true}"
+export CAIPE_UNSAFE_RBAC_BYPASS="${CAIPE_UNSAFE_RBAC_BYPASS:-true}"
+
 HOST="${HOST:-0.0.0.0}"
 PORT="${PORT:-8000}"
 
-echo "Starting CAIPE DeepEval REST API server on ${HOST}:${PORT}..."
+echo "Starting CAIPE DeepEval REST API server (Unauthenticated Dev Mode) on ${HOST}:${PORT}..."
+echo "  - ALLOW_UNAUTHENTICATED_ACCESS: ${ALLOW_UNAUTHENTICATED_ACCESS}"
 
 # Fetch OIDC credentials from Kubernetes if available
 if command -v kubectl >/dev/null 2>&1 && kubectl get secret caipe-ui-secret -n caipe >/dev/null 2>&1; then

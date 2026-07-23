@@ -8,7 +8,8 @@ set "REPO_ROOT=%~dp0.."
 set "PYTHON_BIN=python"
 if not "%PYTHON%"=="" set "PYTHON_BIN=%PYTHON%"
 
-"%PYTHON_BIN%" "%REPO_ROOT%\src\deepeval_eval\hotpotqa_deepeval.py" eval ^
+"%PYTHON_BIN%" "%REPO_ROOT%\src\deepeval_eval\deepeval_evaluator.py" eval ^
+  --dataset-name hotpotqa ^
   --max-items 10 ^
   --top-k 5 ^
   --max-context-chars 12000 ^

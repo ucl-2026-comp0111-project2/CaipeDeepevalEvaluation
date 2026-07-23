@@ -10,8 +10,9 @@ PYTHON_BIN=${PYTHON:-python3}
 SUPERVISOR_URL=${CAIPE_SUPERVISOR_URL:-http://localhost:8000}
 
 exec "$PYTHON_BIN" \
-  "$REPO_ROOT/src/deepeval_eval/hotpotqa_deepeval.py" \
+  "$REPO_ROOT/src/deepeval_eval/deepeval_evaluator.py" \
   eval \
+  --dataset-name hotpotqa \
   --agentic \
   --supervisor-url "$SUPERVISOR_URL" \
   --max-items 10 \

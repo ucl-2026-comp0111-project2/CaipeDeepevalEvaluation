@@ -48,11 +48,9 @@ caipe_deepeval_evaluation/
 |   |-- deepeval_eval/
 |       |-- caipe_client.py
 |       |-- config.py
+|       |-- deepeval_evaluator.py
 |       |-- enterprise_dataset.py
-|       |-- enterprise_deepeval.py
 |       |-- hotpotqa_dataset.py
-|       |-- hotpotqa_deepeval.py
-|       |-- precomputed_deepeval.py
 |       |-- io_utils.py
 |       |-- llm_client.py
 |       |-- metrics.py

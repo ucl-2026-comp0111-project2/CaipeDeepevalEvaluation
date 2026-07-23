@@ -9,8 +9,9 @@ REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 PYTHON_BIN=${PYTHON:-python3}
 
 exec "$PYTHON_BIN" \
-  "$REPO_ROOT/src/deepeval_eval/enterprise_deepeval.py" \
+  "$REPO_ROOT/src/deepeval_eval/deepeval_evaluator.py" \
   eval \
+  --dataset-name enterprise \
   --max-items 10 \
   --top-k 3 \
   --max-context-chars 6000 \

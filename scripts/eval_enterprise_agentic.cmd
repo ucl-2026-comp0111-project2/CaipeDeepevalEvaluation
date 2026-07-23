@@ -10,7 +10,8 @@ if not "%PYTHON%"=="" set "PYTHON_BIN=%PYTHON%"
 
 if "%CAIPE_SUPERVISOR_URL%"=="" set "CAIPE_SUPERVISOR_URL=http://localhost:8000"
 
-"%PYTHON_BIN%" "%REPO_ROOT%\src\deepeval_eval\enterprise_deepeval.py" eval ^
+"%PYTHON_BIN%" "%REPO_ROOT%\src\deepeval_eval\deepeval_evaluator.py" eval ^
+  --dataset-name enterprise ^
   --agentic ^
   --supervisor-url "%CAIPE_SUPERVISOR_URL%" ^
   --max-items 10 ^
