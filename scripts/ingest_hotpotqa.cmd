@@ -8,7 +8,8 @@ set "REPO_ROOT=%~dp0.."
 set "PYTHON_BIN=python"
 if not "%PYTHON%"=="" set "PYTHON_BIN=%PYTHON%"
 
-"%PYTHON_BIN%" "%REPO_ROOT%\src\deepeval_eval\hotpotqa_deepeval.py" ingest ^
+"%PYTHON_BIN%" "%REPO_ROOT%\src\deepeval_eval\ingest.py" ^
+  --dataset-name hotpotqa ^
   --limit 100 ^
   --questions-per-category 50 ^
   --max-docs 1000 ^
