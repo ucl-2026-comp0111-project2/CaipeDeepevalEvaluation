@@ -58,3 +58,28 @@ def load_eval_questions(
             if max_items and len(rows) >= max_items:
                 break
     return rows
+
+
+def parse_indices(indices_str: str, max_len: int) -> set[int]:
+    """Parse string representation of indices (e.g., '1,2,5-8') into a set of 1-based indices."""
+    indices = set()
+    for part in indices_str.split(","):
+        part = part.strip()
+        if "-" in part:
+            try:
+                start_str, end_str = part.split("-", 1)
+                start = int(start_str.strip())
+                end = int(end_str.strip())
+                for i in range(start, end + 1):
+                    if 1 <= i <= max_len:
+                        indices.add(i)
+            except ValueError:
+                pass
+        else:
+            try:
+                i = int(part)
+                if 1 <= i <= max_len:
+                    indices.add(i)
+            except ValueError:
+                pass
+    return indices

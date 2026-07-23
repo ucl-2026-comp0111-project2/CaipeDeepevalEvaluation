@@ -6,6 +6,7 @@ from deepeval_eval.io_utils import (
     download_bytes,
     download_text,
     load_eval_questions,
+    parse_indices,
     sanitize_path,
 )
 
@@ -146,8 +147,6 @@ def test_load_eval_questions_combine_with_level(tmp_path: Path):
 
 
 def test_parse_indices():
-    from deepeval_eval.enterprise_deepeval import parse_indices
-
     # Basic list
     assert parse_indices("1,2,5", 10) == {1, 2, 5}
     # Ranges
@@ -159,8 +158,6 @@ def test_parse_indices():
 
 
 def test_question_filtering_logic(tmp_path: Path):
-    from deepeval_eval.enterprise_deepeval import parse_indices
-
     questions_file = tmp_path / "filter_questions.jsonl"
     data = [
         {"question_id": "q_1", "user_input": "query 1", "category": "cat1"},
