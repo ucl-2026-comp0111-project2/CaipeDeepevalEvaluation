@@ -117,7 +117,19 @@ class TelemetryMetrics:
 
 def setup_otlp_tracing(app: Any = None) -> bool:
     """Set up OpenTelemetry tracer provider and OTLP exporter if configured via environment variables."""
-    endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317")
+    endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
+    enable_otel = os.environ.get("ENABLE_OTEL_TRACING", "").lower() in (
+        "true",
+        "1",
+        "yes",
+    )
+    if not endpoint and not enable_otel:
+        logger.debug(
+            "OpenTelemetry OTLP setup skipped: OTEL_EXPORTER_OTLP_ENDPOINT or ENABLE_OTEL_TRACING not set"
+        )
+        return False
+
+    endpoint = endpoint or "http://localhost:4317"
     service_name = os.environ.get("OTEL_SERVICE_NAME", "deepeval-evaluator")
 
     try:
