@@ -18,6 +18,7 @@ dependencies = [
   'python-multipart',
   'pyjwt',
   'cryptography',
+  'psycopg2-binary',
 ]
 
 [tool.coverage.run]
