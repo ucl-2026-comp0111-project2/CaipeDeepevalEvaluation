@@ -53,6 +53,7 @@ The chat message granting sign-off approval is the audit record.
 - **Conventional Commits** - Format: `type(scope): description`
   - Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`
   - Example: `feat(rag): add userinfo caching`
+- **Grouped Commits** - Group commits by logical functions and modules (split unrelated changes into separate logical commits).
 - **Branch naming** - Use `prebuild/` prefix for CI to build Docker images
   - Example: `prebuild/feat/rag-batch-job-status`
 - **PR descriptions** - Follow the template in `.github/pull_request_template.md`
@@ -72,7 +73,7 @@ bd sync               # Sync with git
 ## Quality Gates
 
 Before committing code changes, run relevant checks:
-- Python: `uv run ruff check`, `uv run pytest` (always use `uv run` to ensure virtual env)
+- Python: `python -m py_compile <files>`, `uv run ruff check`, `uv run ruff format` (for edited files), `uv run pytest` (always use `uv run` to ensure virtual env)
 - UI: `nvm use` first (if available), then `npm run lint`, `npm run build`
 
 ## Testing & TDD Guidelines
