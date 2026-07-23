@@ -288,6 +288,7 @@ def test_database_result_sink_get_connection_positive():
         with patch.dict(
             "os.environ",
             {
+                "DATABASE_URL": "",
                 "POSTGRES_HOST": "db.host",
                 "POSTGRES_PORT": "5433",
                 "POSTGRES_DB": "test_db",
@@ -306,6 +307,36 @@ def test_database_result_sink_get_connection_positive():
             )
 
 
+def test_database_result_sink_init_db_positive():
+    """Verify init_db executes table creation DDL on provided connection without premature commit."""
+    mock_conn = MagicMock()
+    mock_cursor = MagicMock()
+    mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+
+    sink = DatabaseResultSink()
+    sink.init_db(conn=mock_conn)
+
+    mock_cursor.execute.assert_called_once()
+    assert "CREATE TABLE IF NOT EXISTS batches" in mock_cursor.execute.call_args[0][0]
+    mock_conn.commit.assert_not_called()
+
+
+def test_database_result_sink_init_db_standalone_positive():
+    """Verify init_db opens and closes connection when conn is not passed."""
+    mock_conn = MagicMock()
+    mock_conn.closed = False
+    mock_cursor = MagicMock()
+    mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+
+    sink = DatabaseResultSink()
+    with patch.object(sink, "_get_connection", return_value=mock_conn):
+        sink.init_db()
+
+    mock_cursor.execute.assert_called_once()
+    mock_conn.commit.assert_called_once()
+    mock_conn.close.assert_called_once()
+
+
 def test_database_result_sink_save_positive(tmp_path: Path):
     """Verify DatabaseResultSink.save executes DB insertion and commits."""
     mock_psycopg2 = MagicMock()
@@ -321,7 +352,7 @@ def test_database_result_sink_save_positive(tmp_path: Path):
         ),
         patch.object(DatabaseResultSink, "_get_connection", return_value=mock_conn),
     ):
-        sink = DatabaseResultSink()
+        sink = DatabaseResultSink(auto_init=False)
         sink.save(
             tmp_path,
             "prefix",
