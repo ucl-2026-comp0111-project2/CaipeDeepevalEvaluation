@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -31,10 +30,16 @@ from deepeval_eval.sinks import (
 logger = logging.getLogger(__name__)
 
 
+class QualityGateError(RuntimeError):
+    """Raised when evaluation results fail quality gate thresholds."""
+
+    pass
+
+
 @dataclass
 class EvalConfig:
     dataset_name: str = "enterprise"
-    answer_mode: str = "reference"
+    answer_mode: str = "generate"
     datasource_id: str | None = None
     data_dir: Path = field(default_factory=lambda: DEFAULT_DATA_DIR)
     questions_file: Path | None = None
@@ -51,7 +56,7 @@ class EvalConfig:
     agentic: bool = False
     supervisor_url: str | None = None
     fail_on_error: bool = False
-    precompute: bool = False
+    oracle_retrieval: bool = False
     gate: bool = False
     gate_config: Path = field(default_factory=lambda: DEFAULT_GATE_CONFIG)
     env_file: Path = field(default_factory=lambda: DEFAULT_ENV_FILE)
@@ -60,9 +65,19 @@ class EvalConfig:
     question_indices: str | None = None
     batch_id: str | None = None
     run_id: str | None = None
-    config_name: str | None = None
+    oracle_testing: bool = False
     save_to_db: bool = False
     db_connection_string: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.oracle_testing:
+            self.oracle_retrieval = True
+            self.answer_mode = "ground_truth"
+
+        if self.answer_mode not in ("generate", "ground_truth"):
+            raise ValueError(
+                f"Invalid answer_mode: '{self.answer_mode}'. Must be 'generate' or 'ground_truth'"
+            )
 
     def to_config_args(self) -> dict[str, Any]:
         """Convert dataclass fields to serializable configuration dictionary."""
@@ -97,11 +112,11 @@ def _build_rag_client(config: EvalConfig, env_values: dict[str, Any]) -> Any:
     if datasource_id:
         __import__("os").environ["CAIPE_DATASOURCE_ID"] = datasource_id
 
-    if getattr(config, "precompute", False):
-        from deepeval_eval.precomputed_client import PrecomputedRagClient
+    if getattr(config, "oracle_retrieval", False):
+        from deepeval_eval.oracle_client import OracleRagClient
 
         caipe_client = build_caipe_client(env_values)
-        return PrecomputedRagClient(caipe_client)
+        return OracleRagClient(caipe_client)
     elif getattr(config, "agentic", False):
         from deepeval_eval.rag_client import AgenticRagAdapter
 
@@ -197,7 +212,7 @@ def run_evaluation(
     for idx, row in enumerate(rows, start=1):
         question = row["user_input"]
         reference = row.get("reference") or ""
-        print(f"Evaluating {idx}/{len(rows)}: {question[:90]}")
+        logger.info(f"Evaluating {idx}/{len(rows)}: {question[:90]}")
 
         llm_client.reset_tokens()
 
@@ -329,6 +344,6 @@ def run_evaluation(
 
         passed = run_gate_on_results(results, config.gate_config, config.results_dir)
         if not passed:
-            sys.exit(1)
+            raise QualityGateError("Evaluation results failed quality gate thresholds.")
 
     return results

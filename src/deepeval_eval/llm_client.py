@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import threading
 from typing import Any
 
 import httpx
@@ -29,14 +30,41 @@ class OpenAICompatibleClient:
         self.model = model
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
+        self._lock = threading.Lock()
         self.input_tokens = 0
         self.output_tokens = 0
         self.total_tokens = 0
+        self._client: httpx.Client | None = None
+
+    @property
+    def client(self) -> httpx.Client:
+        if self._client is None or self._client.is_closed:
+            limits = httpx.Limits(max_keepalive_connections=20, max_connections=100)
+            self._client = httpx.Client(timeout=300.0, limits=limits)
+        return self._client
+
+    def close(self) -> None:
+        """Close underlying HTTP client connection pool."""
+        if self._client is not None and not self._client.is_closed:
+            self._client.close()
+
+    def __enter__(self) -> OpenAICompatibleClient:
+        return self
+
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        self.close()
+
+    def __del__(self) -> None:
+        try:
+            self.close()
+        except Exception:
+            pass
 
     def reset_tokens(self) -> None:
-        self.input_tokens = 0
-        self.output_tokens = 0
-        self.total_tokens = 0
+        with self._lock:
+            self.input_tokens = 0
+            self.output_tokens = 0
+            self.total_tokens = 0
 
     @retry(
         reraise=True,
@@ -62,18 +90,18 @@ class OpenAICompatibleClient:
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
         }
-        with httpx.Client(timeout=300.0) as client:
-            response = client.post(
-                f"{self.base_url}/chat/completions", headers=headers, json=payload
-            )
-            response.raise_for_status()
-            resp_json = response.json()
-            usage = resp_json.get("usage")
-            if isinstance(usage, dict):
-                self.input_tokens += usage.get("prompt_tokens", 0)
-                self.output_tokens += usage.get("completion_tokens", 0)
-                self.total_tokens += usage.get("total_tokens", 0)
-            text = resp_json["choices"][0]["message"]["content"] or ""
+        response = self.client.post(
+            f"{self.base_url}/chat/completions", headers=headers, json=payload
+        )
+        response.raise_for_status()
+        resp_json = response.json()
+        usage = resp_json.get("usage")
+        if isinstance(usage, dict):
+            with self._lock:
+                self.input_tokens += usage.get("prompt_tokens") or 0
+                self.output_tokens += usage.get("completion_tokens") or 0
+                self.total_tokens += usage.get("total_tokens") or 0
+        text = resp_json["choices"][0]["message"]["content"] or ""
         if schema is None:
             return text.strip()
         return parse_schema_response(text, schema)
@@ -119,7 +147,12 @@ class DeepEvalJudge:
 
 
 def with_json_schema_instruction(prompt: str, schema: type[BaseModel]) -> str:
-    return f"{prompt}\n\nReturn only valid JSON matching this JSON schema. Do not include markdown fences.\n\n{json.dumps(schema.model_json_schema(), indent=2)}"
+    schema_json = json.dumps(schema.model_json_schema(), indent=2)
+    instruction = (
+        "Return only valid JSON matching this JSON schema. "
+        "Do not include markdown fences."
+    )
+    return f"{prompt}\n\n{instruction}\n\n{schema_json}"
 
 
 def parse_schema_response(text: str, schema: type[BaseModel]) -> BaseModel:
@@ -144,9 +177,16 @@ def make_generation_prompt(question: str, contexts: list[str]) -> str:
     context_block = "\n\n".join(
         f"[{idx + 1}] {text}" for idx, text in enumerate(contexts)
     )
+    instruction = (
+        "Answer the question using only the context below. "
+        "If the context is not enough, say that the answer "
+        "is not in the provided context."
+    )
     return (
-        "Answer the question using only the context below. If the context is not enough, say that the answer is not in the provided context.\n\n"
-        + f"Question:\n{question}\n\nContext:\n{context_block}\n\nAnswer:"
+        f"{instruction}\n\n"
+        f"Question:\n{question}\n\n"
+        f"Context:\n{context_block}\n\n"
+        "Answer:"
     )
 
 
@@ -154,7 +194,14 @@ def make_short_answer_prompt(question: str, contexts: list[str]) -> str:
     context_block = "\n\n".join(
         f"[{idx + 1}] {text}" for idx, text in enumerate(contexts)
     )
+    instruction = (
+        "Answer the HotpotQA question using only the context below. "
+        "Keep the answer short. If the context is not enough, say "
+        "that the answer is not in the provided context."
+    )
     return (
-        "Answer the HotpotQA question using only the context below. Keep the answer short. If the context is not enough, say that the answer is not in the provided context.\n\n"
-        + f"Question:\n{question}\n\nContext:\n{context_block}\n\nAnswer:"
+        f"{instruction}\n\n"
+        f"Question:\n{question}\n\n"
+        f"Context:\n{context_block}\n\n"
+        "Answer:"
     )

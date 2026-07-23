@@ -33,6 +33,8 @@ from typing import Any
 import httpx
 import requests
 
+from deepeval_eval.io_utils import sanitize_path
+
 logger = logging.getLogger(__name__)
 
 # ============================================================
@@ -76,7 +78,8 @@ class BaseRAG:
     ) -> str:
         """Export traces to a JSON log file, matching BaseRAG's method."""
         os.makedirs(self.logdir, exist_ok=True)
-        log_path = os.path.join(self.logdir, f"query_trace_{run_id}.json")
+        safe_run_id = sanitize_path(run_id) or "default"
+        log_path = os.path.join(self.logdir, f"query_trace_{safe_run_id}.json")
         try:
             with open(log_path, "w", encoding="utf-8") as f:
                 json.dump(

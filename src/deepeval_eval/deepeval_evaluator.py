@@ -19,6 +19,7 @@ from deepeval_eval.config import (
 )
 from deepeval_eval.eval_engine import (
     EvalConfig,
+    QualityGateError,
     _build_rag_client,
     run_evaluation,
 )
@@ -90,9 +91,14 @@ def _add_eval_args(parser: argparse.ArgumentParser) -> None:
         help="Fail loudly if a query evaluation fails after retries",
     )
     parser.add_argument(
-        "--precompute",
+        "--oracle-retrieval",
         action="store_true",
-        help="Run precomputed benchmark (gold-source retrieval via CAIPE)",
+        help="Enable oracle retrieval (querying CAIPE search using question + reference)",
+    )
+    parser.add_argument(
+        "--oracle-testing",
+        action="store_true",
+        help="Shortcut to enable oracle_retrieval and ground_truth answer mode",
     )
     parser.add_argument(
         "--gate",
@@ -141,7 +147,7 @@ def _run_eval(args: argparse.Namespace) -> None:
     )
     config = EvalConfig(
         dataset_name=ds_name,
-        answer_mode=getattr(args, "answer_mode", "reference"),
+        answer_mode=getattr(args, "answer_mode", "generate"),
         datasource_id=getattr(args, "datasource_id", None),
         data_dir=getattr(args, "data_dir", DEFAULT_DATA_DIR),
         questions_file=getattr(args, "questions_file", None),
@@ -157,7 +163,8 @@ def _run_eval(args: argparse.Namespace) -> None:
         agentic=getattr(args, "agentic", False),
         supervisor_url=getattr(args, "supervisor_url", "http://localhost:8000"),
         fail_on_error=getattr(args, "fail_on_error", False),
-        precompute=getattr(args, "precompute", False),
+        oracle_retrieval=getattr(args, "oracle_retrieval", False),
+        oracle_testing=getattr(args, "oracle_testing", False),
         gate=getattr(args, "gate", False),
         gate_config=getattr(args, "gate_config", DEFAULT_GATE_CONFIG),
         env_file=getattr(args, "env_file", DEFAULT_ENV_FILE),
@@ -168,7 +175,13 @@ def _run_eval(args: argparse.Namespace) -> None:
     )
     env_values = load_dotenv_loose(config.env_file)
     rag_client = _build_rag_client(config, env_values)
-    run_evaluation(config, rag_client=rag_client)
+    try:
+        run_evaluation(config, rag_client=rag_client)
+    except QualityGateError as err:
+        import sys
+
+        sys.stderr.write(f"Quality gate error: {err}\n")
+        sys.exit(1)
 
 
 # ---------------------------------------------------------------------------
@@ -209,9 +222,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     eval_parser.add_argument(
         "--answer-mode",
-        choices=["reference", "generate"],
-        default="reference",
-        help="reference uses the benchmark answer as actual_output; generate answers from gold context using the LLM",
+        choices=["generate", "ground_truth"],
+        default="generate",
+        help="ground_truth uses benchmark ground-truth answer; generate synthesizes answers via LLM (default: generate)",
     )
     _add_eval_args(eval_parser)
     eval_parser.set_defaults(func=_eval_subcommand)

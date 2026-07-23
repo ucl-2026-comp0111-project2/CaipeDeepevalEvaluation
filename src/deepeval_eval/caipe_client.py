@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 from typing import Any
 
@@ -10,6 +11,8 @@ from deepeval_eval.rag_client import (
     BaseRagClient,
     RagQueryResult,
 )  # Re-exported for backward compatibility
+
+logger = logging.getLogger(__name__)
 
 
 def check_response(resp: requests.Response) -> requests.Response:
@@ -74,11 +77,14 @@ class CaipeRagClient(BaseRagClient):
             # Set local expiry timestamp with a 30-second clock-skew safety buffer
             self.token_expiry = time.time() + expires_in - 30
             self.session.headers["Authorization"] = f"Bearer {token}"
-            print(
-                f"[INFO] Keycloak Token refreshed successfully. Valid for {expires_in}s."
+            logger.info(
+                f"Keycloak Token refreshed successfully. Valid for {expires_in}s."
             )
-        except Exception as e:
-            print(f"[ERROR] Failed to fetch token via client_credentials: {e}")
+        except Exception as exc:
+            logger.exception("Failed to fetch token via client_credentials.")
+            raise RuntimeError(
+                f"Failed to refresh OIDC token via Keycloak: {exc}"
+            ) from exc
 
     def ensure_authenticated(self) -> None:
         """Checks validation window and triggers dynamic refresh if expired."""

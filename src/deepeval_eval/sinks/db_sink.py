@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
 from pathlib import Path
 from typing import Any
 
+logger = logging.getLogger(__name__)
+
 
 class DatabaseResultSink:
-    """Persists evaluation run directly to PostgreSQL tables (batches, runs, eval_results)."""
+    """Persists evaluation run directly to PostgreSQL tables."""
 
     def __init__(self, connection_string: str | None = None):
         self.connection_string = connection_string
@@ -61,7 +64,7 @@ class DatabaseResultSink:
         try:
             from psycopg2.extras import RealDictCursor
         except ImportError:
-            print("psycopg2 is not installed; skipping database query.")
+            logger.warning("psycopg2 is not installed; skipping database query.")
             return []
 
         conn = self._get_connection()
@@ -79,7 +82,8 @@ class DatabaseResultSink:
                 rows = cur.fetchall()
             return [dict(r) for r in rows]
         finally:
-            conn.close()
+            if conn is not None and not conn.closed:
+                conn.close()
 
     def save(
         self,
@@ -92,7 +96,7 @@ class DatabaseResultSink:
         try:
             from psycopg2.extras import execute_values
         except ImportError:
-            print("psycopg2 is not installed; skipping database persistence.")
+            logger.warning("psycopg2 is not installed; skipping database persistence.")
             return
 
         batch_id = config_args.get("batch_id") or f"batch_{time.strftime('%Y%m%d')}"
@@ -104,56 +108,65 @@ class DatabaseResultSink:
         try:
             conn = self._get_connection()
         except Exception as exc:
-            print(f"Failed to connect to database for direct persistence: {exc}")
+            logger.warning(
+                f"Failed to connect to database for direct persistence: {exc}"
+            )
             return
 
         try:
-            cur = conn.cursor()
-            cur.execute(
-                """
-                INSERT INTO batches (batch_id)
-                VALUES (%s)
-                ON CONFLICT (batch_id) DO NOTHING
-                """,
-                (batch_id,),
-            )
-            cur.execute(
-                """
-                INSERT INTO runs (run_id, batch_id, config_name, config_json)
-                VALUES (%s, %s, %s, %s)
-                ON CONFLICT (run_id) DO UPDATE
-                    SET config_json = EXCLUDED.config_json,
-                        loaded_at   = now()
-                """,
-                (run_id, batch_id, config_name, json.dumps(config_args, default=str)),
-            )
-
-            cur.execute("DELETE FROM eval_results WHERE run_id = %s", (run_id,))
-
-            rows = [
-                (
-                    run_id,
-                    batch_id,
-                    r.get("question"),
-                    json.dumps(r, default=str),
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO batches (batch_id)
+                    VALUES (%s)
+                    ON CONFLICT (batch_id) DO NOTHING
+                    """,
+                    (batch_id,),
                 )
-                for r in results
-            ]
-            execute_values(
-                cur,
-                """
-                INSERT INTO eval_results (run_id, batch_id, question, row_data)
-                VALUES %s
-                """,
-                rows,
-                template="(%s, %s, %s, %s::jsonb)",
+                cur.execute(
+                    """
+                    INSERT INTO runs (run_id, batch_id, config_name, config_json)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (run_id) DO UPDATE
+                        SET config_json = EXCLUDED.config_json,
+                            loaded_at   = now()
+                    """,
+                    (
+                        run_id,
+                        batch_id,
+                        config_name,
+                        json.dumps(config_args, default=str),
+                    ),
+                )
+
+                cur.execute("DELETE FROM eval_results WHERE run_id = %s", (run_id,))
+
+                rows = [
+                    (
+                        run_id,
+                        batch_id,
+                        r.get("question"),
+                        json.dumps(r, default=str),
+                    )
+                    for r in results
+                ]
+                execute_values(
+                    cur,
+                    """
+                    INSERT INTO eval_results (run_id, batch_id, question, row_data)
+                    VALUES %s
+                    """,
+                    rows,
+                    template="(%s, %s, %s, %s::jsonb)",
+                )
+                conn.commit()
+            logger.info(
+                f"Persisted run '{run_id}' ({len(results)} rows) to Postgres DB."
             )
-            conn.commit()
-            print(
-                f"Successfully persisted run '{run_id}' ({len(results)} rows) to Postgres DB."
-            )
-        except Exception as exc:
-            conn.rollback()
-            print(f"Failed to insert eval results into database: {exc}")
+        except Exception:
+            if conn is not None and not conn.closed:
+                conn.rollback()
+            logger.exception("Failed to insert eval results into database.")
         finally:
-            conn.close()
+            if conn is not None and not conn.closed:
+                conn.close()
