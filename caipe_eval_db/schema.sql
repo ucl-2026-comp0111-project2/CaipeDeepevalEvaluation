@@ -35,7 +35,6 @@ CREATE INDEX IF NOT EXISTS idx_results_row_data ON eval_results USING GIN (row_d
 
 CREATE TABLE IF NOT EXISTS run_summary (
     run_id        TEXT PRIMARY KEY REFERENCES runs(run_id) ON DELETE CASCADE,
-    avg_score     DOUBLE PRECISION,
     p50_latency   DOUBLE PRECISION,
     p95_latency   DOUBLE PRECISION,
     summary_json  JSONB
