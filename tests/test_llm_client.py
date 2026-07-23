@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
+
 import httpx
 import pytest
 from pydantic import BaseModel
@@ -25,12 +26,16 @@ def test_is_transient_error_positive() -> None:
     # 500 error is transient
     mock_response = MagicMock(spec=httpx.Response)
     mock_response.status_code = 500
-    err = httpx.HTTPStatusError("Server Error", request=MagicMock(), response=mock_response)
+    err = httpx.HTTPStatusError(
+        "Server Error", request=MagicMock(), response=mock_response
+    )
     assert is_transient_error(err) is True
 
     # 403 error is transient (e.g. auth lag)
     mock_response.status_code = 403
-    err_403 = httpx.HTTPStatusError("Forbidden", request=MagicMock(), response=mock_response)
+    err_403 = httpx.HTTPStatusError(
+        "Forbidden", request=MagicMock(), response=mock_response
+    )
     assert is_transient_error(err_403) is True
 
 
@@ -38,17 +43,23 @@ def test_is_transient_error_negative() -> None:
     # 400 bad request is not transient
     mock_response = MagicMock(spec=httpx.Response)
     mock_response.status_code = 400
-    err = httpx.HTTPStatusError("Bad Request", request=MagicMock(), response=mock_response)
+    err = httpx.HTTPStatusError(
+        "Bad Request", request=MagicMock(), response=mock_response
+    )
     assert is_transient_error(err) is False
 
     # 401 unauthorized is not transient
     mock_response.status_code = 401
-    err_401 = httpx.HTTPStatusError("Unauthorized", request=MagicMock(), response=mock_response)
+    err_401 = httpx.HTTPStatusError(
+        "Unauthorized", request=MagicMock(), response=mock_response
+    )
     assert is_transient_error(err_401) is False
 
 
 def test_openai_compatible_client_positive() -> None:
-    client = OpenAICompatibleClient(model="test-model", api_key="test-key", base_url="http://localhost:8000/v1")
+    client = OpenAICompatibleClient(
+        model="test-model", api_key="test-key", base_url="http://localhost:8000/v1"
+    )
     assert client.input_tokens == 0
 
     mock_resp = MagicMock()
@@ -69,10 +80,14 @@ def test_openai_compatible_client_positive() -> None:
 
 
 def test_openai_compatible_client_negative() -> None:
-    client = OpenAICompatibleClient(model="test-model", api_key="test-key", base_url="http://localhost:8000/v1")
+    client = OpenAICompatibleClient(
+        model="test-model", api_key="test-key", base_url="http://localhost:8000/v1"
+    )
 
     mock_resp = MagicMock()
-    mock_resp.raise_for_status.side_effect = httpx.HTTPStatusError("400 Bad Request", request=MagicMock(), response=MagicMock(status_code=400))
+    mock_resp.raise_for_status.side_effect = httpx.HTTPStatusError(
+        "400 Bad Request", request=MagicMock(), response=MagicMock(status_code=400)
+    )
 
     with patch("httpx.Client.post", return_value=mock_resp):
         with pytest.raises(httpx.HTTPStatusError):
@@ -80,7 +95,9 @@ def test_openai_compatible_client_negative() -> None:
 
 
 def test_deepeval_judge_adapter() -> None:
-    client = OpenAICompatibleClient(model="test-model", api_key="test-key", base_url="http://localhost:8000")
+    client = OpenAICompatibleClient(
+        model="test-model", api_key="test-key", base_url="http://localhost:8000"
+    )
     judge = DeepEvalJudge("custom", "test-model", client)
     assert judge.model.get_model_name() == "custom:test-model"
     assert judge.model.load_model() == client

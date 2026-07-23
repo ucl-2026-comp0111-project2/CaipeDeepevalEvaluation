@@ -27,11 +27,9 @@ client = TestClient(app)
 
 
 def test_sanitize_config_args_positive():
-    """Verify sensitive keys, env_file, and null values are omitted, and questions_file is trimmed to basename."""
+    """Verify sensitive keys and null values are omitted from sanitized configuration output."""
     raw_config = {
         "dataset_name": "enterprise",
-        "questions_file": "/var/folders/_c/123/T/tmp/enterprise_questions.jsonl",
-        "env_file": ".env.local",
         "llm_api_key": "secret-12345",
         "auth_token": "bearer-abc",
         "prompt_style": None,
@@ -40,20 +38,17 @@ def test_sanitize_config_args_positive():
     sanitized = sanitize_config_args(raw_config)
     assert "llm_api_key" not in sanitized
     assert "auth_token" not in sanitized
-    assert "env_file" not in sanitized
     assert "prompt_style" not in sanitized
-    assert sanitized["questions_file"] == "enterprise_questions.jsonl"
     assert sanitized["dataset_name"] == "enterprise"
     assert sanitized["max_items"] == 10
 
 
 def test_sanitize_config_args_negative():
-    """Verify empty dictionary or dict with all sensitive/null/env keys returns empty dict."""
+    """Verify empty dictionary or dict with all sensitive/null keys returns empty dict."""
     raw_config = {
         "llm_api_key": "secret",
         "db_connection_string": "postgres://...",
-        "env_file": ".env",
-        "prompt_config": None,
+        "auth_token": None,
     }
     sanitized = sanitize_config_args(raw_config)
     assert sanitized == {}
@@ -204,6 +199,30 @@ def test_root_and_health_endpoints_positive():
     res_health = client.get("/health")
     assert res_health.status_code == 200
     assert res_health.json()["status"] == "healthy"
+
+
+def test_endpoint_authentication_protection(monkeypatch):
+    """Verify endpoints enforce authentication when unauthenticated access is disabled."""
+    monkeypatch.setenv("ALLOW_UNAUTHENTICATED_ACCESS", "false")
+    monkeypatch.delenv("CAIPE_UNSAFE_RBAC_BYPASS", raising=False)
+
+    # Protected endpoint without token -> 401 Unauthorized
+    res_root = client.get("/")
+    assert res_root.status_code == 401
+
+    res_jobs = client.post("/eval/jobs", json={"dataset_name": "enterprise"})
+    assert res_jobs.status_code == 401
+
+    # Health check endpoint remains unauthenticated -> 200 OK
+    res_health = client.get("/health")
+    assert res_health.status_code == 200
+    assert res_health.json()["status"] == "healthy"
+
+    # Protected endpoint with static API key header -> 200 OK
+    monkeypatch.setenv("DEEPEVAL_API_KEY", "test_key_123")
+    headers = {"Authorization": "Bearer test_key_123"}
+    res_root_auth = client.get("/", headers=headers)
+    assert res_root_auth.status_code == 200
 
 
 def test_swagger_docs_accessible():

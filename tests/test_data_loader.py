@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+
 import pytest
 
 from deepeval_eval.data_loader import (
@@ -67,7 +68,9 @@ def test_database_data_loader_requires_connection_string():
 
 def test_resolve_questions_file_explicit_nonexistent(tmp_path: Path):
     q_file = tmp_path / "nonexistent.jsonl"
-    with pytest.raises(FileNotFoundError, match="Specified questions file does not exist"):
+    with pytest.raises(
+        FileNotFoundError, match="Specified questions file does not exist"
+    ):
         resolve_questions_file("custom", questions_file=q_file)
 
 
@@ -103,7 +106,7 @@ def test_file_data_loader_jsonl_limits(tmp_path: Path):
     jsonl_file = tmp_path / "questions.jsonl"
     jsonl_file.write_text(
         '{"category": "c1", "level": "l1", "user_input": "q1"}\n'
-        '\n'
+        "\n"
         '{"category": "c1", "level": "l1", "user_input": "q2"}\n'
         '{"category": "c1", "level": "l2", "user_input": "q3"}\n',
         encoding="utf-8",
@@ -111,4 +114,3 @@ def test_file_data_loader_jsonl_limits(tmp_path: Path):
     loader = FileDataLoader(questions_file=jsonl_file)
     rows = loader.load(limit_per_category=1, combine_with_level=False)
     assert len(rows) == 1
-

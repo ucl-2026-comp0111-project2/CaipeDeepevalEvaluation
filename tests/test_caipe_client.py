@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
+
 import pytest
 import requests
 
@@ -72,18 +73,20 @@ def test_extract_contexts_and_sources_negative() -> None:
 
 
 def test_caipe_rag_client_refresh_access_token_positive() -> None:
-    client = CaipeRagClient(
-        base_url="https://caipe.homelab/api",
-        keycloak_url="https://keycloak.caipe.homelab/token",
-        client_id="test_client",
-        client_secret="test_secret",
-    )
     mock_resp = MagicMock()
-    mock_resp.json.return_value = {"access_token": "new_access_token", "expires_in": 600}
+    mock_resp.json.return_value = {
+        "access_token": "new_access_token",
+        "expires_in": 600,
+    }
     mock_resp.raise_for_status = MagicMock()
 
     with patch("requests.post", return_value=mock_resp):
-        client.refresh_access_token()
+        client = CaipeRagClient(
+            base_url="https://caipe.homelab/api",
+            keycloak_url="https://keycloak.caipe.homelab/token",
+            client_id="test_client",
+            client_secret="test_secret",
+        )
         assert client.session.headers["Authorization"] == "Bearer new_access_token"
 
 
@@ -93,11 +96,29 @@ def test_caipe_rag_client_refresh_access_token_negative() -> None:
     client.refresh_access_token()
 
 
+def test_caipe_rag_client_refresh_access_token_failure() -> None:
+    with patch(
+        "requests.post",
+        side_effect=requests.RequestException("Keycloak connection error"),
+    ):
+        with pytest.raises(
+            RuntimeError, match="Failed to refresh OIDC token via Keycloak"
+        ):
+            CaipeRagClient(
+                base_url="https://caipe.homelab/api",
+                keycloak_url="https://keycloak.caipe.homelab/token",
+                client_id="test_client",
+                client_secret="test_secret",
+            )
+
+
 def test_caipe_rag_client_query_raw_positive() -> None:
     client = CaipeRagClient(base_url="https://caipe.homelab/api", token="static_token")
     mock_resp = MagicMock()
     mock_resp.ok = True
-    mock_resp.json.return_value = [{"document": {"page_content": "Content"}, "score": 0.9}]
+    mock_resp.json.return_value = [
+        {"document": {"page_content": "Content"}, "score": 0.9}
+    ]
 
     with patch.object(client.session, "post", return_value=mock_resp):
         res = client.query_raw("query text", datasource_id="ds1", limit=3)
@@ -142,7 +163,10 @@ def test_caipe_rag_client_ingest_endpoints(tmp_path) -> None:
     mock_resp.status_code = 200
 
     # test register_ingestor
-    mock_resp.json.return_value = {"ingestor_id": "ing123", "max_documents_per_ingest": 100}
+    mock_resp.json.return_value = {
+        "ingestor_id": "ing123",
+        "max_documents_per_ingest": 100,
+    }
     with patch.object(client.session, "post", return_value=mock_resp):
         ing_id, max_docs = client.register_ingestor("type", "name", "desc")
         assert ing_id == "ing123"
@@ -178,9 +202,18 @@ def test_caipe_rag_client_prompt_style_query() -> None:
     mock_llm = MagicMock()
     mock_llm.generate.return_value = "Short Answer"
 
-    raw_results = [{"document": {"page_content": "Short context", "metadata": {"document_id": "hp1"}}}]
+    raw_results = [
+        {
+            "document": {
+                "page_content": "Short context",
+                "metadata": {"document_id": "hp1"},
+            }
+        }
+    ]
     with patch.object(client, "query_raw", return_value=raw_results):
-        res = client.query("What is Y?", prompt_style=PromptStyle.SHORT, llm_client=mock_llm)
+        res = client.query(
+            "What is Y?", prompt_style=PromptStyle.SHORT, llm_client=mock_llm
+        )
         assert res.answer == "Short Answer"
         assert res.retrieved_doc_ids == ["hp1"]
         assert mock_llm.generate.called

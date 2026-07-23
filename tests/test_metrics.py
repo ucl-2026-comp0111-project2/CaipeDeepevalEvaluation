@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from unittest.mock import MagicMock
+
+from deepeval.models.base_model import DeepEvalBaseLLM
 from deepeval.test_case import LLMTestCase
 
 from deepeval_eval.metrics import (
@@ -20,17 +22,19 @@ from deepeval_eval.metrics import (
 from deepeval_eval.sinks.protocol import EvaluatorMetric
 
 
-from deepeval.models.base_model import DeepEvalBaseLLM
-
 class DummyJudge(DeepEvalBaseLLM):
     def __init__(self):
         super().__init__(model="test")
+
     def load_model(self, *args, **kwargs):
         return None
+
     def get_model_name(self, *args, **kwargs) -> str:
         return "dummy"
+
     def generate(self, prompt: str, schema=None, **kwargs) -> str:
         return ""
+
     async def a_generate(self, prompt: str, schema=None, **kwargs) -> str:
         return ""
 
@@ -87,7 +91,11 @@ def test_evaluator_metric_protocol_compliance() -> None:
 
 
 def test_doc_id_scores_positive() -> None:
-    retrieved = [{"document_id": "doc1"}, {"document_id": "doc2"}, {"document_id": "doc3"}]
+    retrieved = [
+        {"document_id": "doc1"},
+        {"document_id": "doc2"},
+        {"document_id": "doc3"},
+    ]
     expected = ["doc2", "doc4"]
     recall, precision = doc_id_scores(retrieved, expected)
     assert recall == 0.5  # 1 hit out of 2 expected
@@ -139,7 +147,11 @@ def test_answer_scores_negative() -> None:
 
 def test_normalized_exact_match_metric_positive() -> None:
     metric = NormalizedExactMatchMetric()
-    test_case = LLMTestCase(input="What is the capital of France?", actual_output="Paris", expected_output="Paris")
+    test_case = LLMTestCase(
+        input="What is the capital of France?",
+        actual_output="Paris",
+        expected_output="Paris",
+    )
     score = metric.measure(test_case)
     assert score == 1.0
     assert metric.is_successful() is True
@@ -148,7 +160,11 @@ def test_normalized_exact_match_metric_positive() -> None:
 
 def test_normalized_exact_match_metric_negative() -> None:
     metric = NormalizedExactMatchMetric()
-    test_case = LLMTestCase(input="What is the capital of France?", actual_output="London", expected_output="Paris")
+    test_case = LLMTestCase(
+        input="What is the capital of France?",
+        actual_output="London",
+        expected_output="Paris",
+    )
     score = metric.measure(test_case)
     assert score == 0.0
     assert metric.is_successful() is False
@@ -156,7 +172,11 @@ def test_normalized_exact_match_metric_negative() -> None:
 
 def test_contains_reference_metric_positive() -> None:
     metric = ContainsReferenceMetric()
-    test_case = LLMTestCase(input="Where is Paris?", actual_output="The capital of France is Paris", expected_output="Paris")
+    test_case = LLMTestCase(
+        input="Where is Paris?",
+        actual_output="The capital of France is Paris",
+        expected_output="Paris",
+    )
     score = metric.measure(test_case)
     assert score == 1.0
     assert metric.is_successful() is True
@@ -165,7 +185,11 @@ def test_contains_reference_metric_positive() -> None:
 
 def test_contains_reference_metric_negative() -> None:
     metric = ContainsReferenceMetric()
-    test_case = LLMTestCase(input="Where is Paris?", actual_output="The capital of France is Berlin", expected_output="Paris")
+    test_case = LLMTestCase(
+        input="Where is Paris?",
+        actual_output="The capital of France is Berlin",
+        expected_output="Paris",
+    )
     score = metric.measure(test_case)
     assert score == 0.0
     assert metric.is_successful() is False
@@ -179,7 +203,9 @@ def test_answer_correctness_metric_positive() -> None:
     metric.geval_judge.is_successful.return_value = True
     metric.geval_judge.reason = "High factual match"
 
-    test_case = LLMTestCase(input="What is 2+2?", actual_output="4", expected_output="4")
+    test_case = LLMTestCase(
+        input="What is 2+2?", actual_output="4", expected_output="4"
+    )
     score = metric.measure(test_case)
     assert score == 0.9
     assert metric.is_successful() is True
@@ -194,7 +220,9 @@ def test_answer_correctness_metric_negative() -> None:
     metric.geval_judge.is_successful.return_value = False
     metric.geval_judge.reason = "Incorrect answer"
 
-    test_case = LLMTestCase(input="What is 2+2?", actual_output="5", expected_output="4")
+    test_case = LLMTestCase(
+        input="What is 2+2?", actual_output="5", expected_output="4"
+    )
     score = metric.measure(test_case)
     assert score == 0.1
     assert metric.is_successful() is False
@@ -206,7 +234,10 @@ def test_mrr_metric_positive() -> None:
     test_case = LLMTestCase(
         input="test",
         actual_output="out",
-        metadata={"retrieved_doc_ids": ["docA", "docB", "docC"], "expected_doc_ids": ["docB"]},
+        metadata={
+            "retrieved_doc_ids": ["docA", "docB", "docC"],
+            "expected_doc_ids": ["docB"],
+        },
     )
     score = metric.measure(test_case)
     assert score == 0.5  # Rank 2 -> 1/2
@@ -236,7 +267,10 @@ def test_ndcg_at_k_metric_positive() -> None:
     test_case = LLMTestCase(
         input="test",
         actual_output="out",
-        metadata={"retrieved_doc_ids": ["doc1", "doc2", "doc3"], "expected_doc_ids": ["doc1", "doc3"]},
+        metadata={
+            "retrieved_doc_ids": ["doc1", "doc2", "doc3"],
+            "expected_doc_ids": ["doc1", "doc3"],
+        },
     )
     score = metric.measure(test_case)
     assert score > 0.0
@@ -270,7 +304,10 @@ def test_retrieval_recall_metric_positive() -> None:
     test_case = LLMTestCase(
         input="q",
         actual_output="a",
-        metadata={"retrieved_doc_ids": ["doc1", "doc2"], "expected_doc_ids": ["doc2", "doc3"]},
+        metadata={
+            "retrieved_doc_ids": ["doc1", "doc2"],
+            "expected_doc_ids": ["doc2", "doc3"],
+        },
     )
     score = metric.measure(test_case)
     assert score == 0.5  # 1 hit out of 2 expected
@@ -309,4 +346,3 @@ def test_retrieval_precision_metric_negative() -> None:
         metadata={"retrieved_doc_ids": [], "expected_doc_ids": ["doc1"]},
     )
     assert metric.measure(test_case) == 0.0
-

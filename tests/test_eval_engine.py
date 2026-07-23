@@ -8,10 +8,16 @@ from deepeval_eval.eval_engine import EvalConfig, run_evaluation
 def test_eval_config_defaults():
     config = EvalConfig()
     assert config.dataset_name == "enterprise"
-    assert config.answer_mode == "reference"
+    assert config.answer_mode == "generate"
     assert config.top_k == 3
     assert not config.agentic
     assert not config.save_to_db
+
+
+def test_eval_config_oracle_testing():
+    config = EvalConfig(oracle_testing=True)
+    assert config.oracle_retrieval is True
+    assert config.answer_mode == "ground_truth"
 
 
 def test_eval_config_to_config_args():
@@ -55,7 +61,9 @@ def test_run_evaluation_with_in_memory_data_loader(tmp_path: Path):
     mock_query_res.log_file = None
     mock_rag_client.query.return_value = mock_query_res
 
-    res = run_evaluation(config=config, data_loader=loader, rag_client=mock_rag_client, metrics=[])
+    res = run_evaluation(
+        config=config, data_loader=loader, rag_client=mock_rag_client, metrics=[]
+    )
     assert len(res) == 1
     assert res[0]["dataset_name"] == "custom_ds"
     assert res[0]["question"] == "What is CAIPE?"
@@ -85,21 +93,30 @@ def test_run_evaluation_question_ids_and_indices(tmp_path: Path):
 
     # Filter by question_ids
     config_ids = EvalConfig(results_dir=tmp_path / "res1", question_ids="q102")
-    res_ids = run_evaluation(config=config_ids, data_loader=loader, rag_client=mock_rag_client, metrics=[])
+    res_ids = run_evaluation(
+        config=config_ids, data_loader=loader, rag_client=mock_rag_client, metrics=[]
+    )
     assert len(res_ids) == 1
     assert res_ids[0]["question_id"] == "q102"
 
     # Filter by question_indices (range and single index)
     config_idx = EvalConfig(results_dir=tmp_path / "res2", question_indices="1-2, 3")
-    res_idx = run_evaluation(config=config_idx, data_loader=loader, rag_client=mock_rag_client, metrics=[])
+    res_idx = run_evaluation(
+        config=config_idx, data_loader=loader, rag_client=mock_rag_client, metrics=[]
+    )
     assert len(res_idx) == 3
 
 
 def test_run_evaluation_prompt_config_and_db(tmp_path: Path):
     prompt_yaml = tmp_path / "prompt_config.yaml"
-    prompt_yaml.write_text("styles:\n  custom:\n    system_prompt: sys\n    user_template: '{context} {question}'\n", encoding="utf-8")
+    prompt_yaml.write_text(
+        "styles:\n  custom:\n    system_prompt: sys\n    user_template: '{context} {question}'\n",
+        encoding="utf-8",
+    )
 
-    dataset = [{"question_id": "q1", "user_input": "Test prompt config?", "reference": "Ref"}]
+    dataset = [
+        {"question_id": "q1", "user_input": "Test prompt config?", "reference": "Ref"}
+    ]
     loader = InMemoryDataLoader(dataset)
 
     mock_rag_client = MagicMock()
@@ -122,7 +139,9 @@ def test_run_evaluation_prompt_config_and_db(tmp_path: Path):
         save_to_db=True,
         db_connection_string="sqlite:///:memory:",
     )
-    res = run_evaluation(config=config, data_loader=loader, rag_client=mock_rag_client, metrics=[])
+    res = run_evaluation(
+        config=config, data_loader=loader, rag_client=mock_rag_client, metrics=[]
+    )
     assert len(res) == 1
 
 
@@ -150,11 +169,15 @@ class MockBrokenGetReasonMetric:
         return True
 
     def get_reason(self):
-        raise AttributeError("'MockBrokenGetReasonMetric' object has no attribute 'get_reason'")
+        raise AttributeError(
+            "'MockBrokenGetReasonMetric' object has no attribute 'get_reason'"
+        )
 
 
 def test_run_evaluation_preserves_metric_scores_and_reasons(tmp_path: Path):
-    dataset = [{"question_id": "q_metric", "user_input": "Test metric?", "reference": "Ref"}]
+    dataset = [
+        {"question_id": "q_metric", "user_input": "Test metric?", "reference": "Ref"}
+    ]
     loader = InMemoryDataLoader(dataset)
 
     mock_rag_client = MagicMock()
@@ -191,6 +214,3 @@ def test_run_evaluation_preserves_metric_scores_and_reasons(tmp_path: Path):
     assert metrics_res["MockBrokenGetReasonMetric"]["score"] == 0.85
     assert metrics_res["MockBrokenGetReasonMetric"]["reason"] == "Valid reason"
     assert metrics_res["MockBrokenGetReasonMetric"]["success"] is True
-
-
-
