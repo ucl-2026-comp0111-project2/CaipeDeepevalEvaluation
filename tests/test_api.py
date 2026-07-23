@@ -559,3 +559,53 @@ def test_get_job_results_invalid_format():
     response = client.get(f"/jobs/{job['job_id']}/results?format=invalid_fmt")
     assert response.status_code == 400
     assert "Unsupported format" in response.json()["detail"]
+
+
+def test_healthz_and_livez_probes():
+    """Verify shallow orchestrator liveness probes (/healthz and /livez)."""
+    res1 = client.get("/healthz")
+    assert res1.status_code == 200
+    assert res1.json() == {"status": "ok"}
+
+    res2 = client.get("/livez")
+    assert res2.status_code == 200
+    assert res2.json() == {"status": "ok"}
+
+
+def test_readyz_probe():
+    """Verify shallow readiness probe (/readyz)."""
+    res = client.get("/readyz")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] == "ok"
+    assert "checks" in data
+    assert data["checks"]["cache_dir"] == "connected"
+
+
+def test_health_deep_check():
+    """Verify detailed status endpoint (/health) returns version, uptime, and checks."""
+    res = client.get("/health")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] in ("healthy", "degraded")
+    assert data["version"] == "0.1.0"
+    assert "uptime_seconds" in data
+    assert isinstance(data["uptime_seconds"], (int, float))
+    assert "checks" in data
+    assert "cache_dir" in data["checks"]
+    assert "job_manager" in data["checks"]
+
+
+def test_metrics_prometheus():
+    """Verify /metrics returns Prometheus format text via prometheus_client."""
+    res_text = client.get("/metrics")
+    assert res_text.status_code == 200
+    assert "text/plain" in res_text.headers["content-type"]
+    assert "deepeval_uptime_seconds" in res_text.text
+    assert "deepeval_jobs_total" in res_text.text
+
+
+def test_telemetry_endpoint_removed():
+    """Verify non-standard /telemetry endpoint returns HTTP 404 (removed in favor of standard /metrics)."""
+    res = client.get("/telemetry")
+    assert res.status_code == 404

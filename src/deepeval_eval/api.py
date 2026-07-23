@@ -20,6 +20,7 @@ from fastapi import (
     File,
     HTTPException,
     Query,
+    Request,
     Response,
     UploadFile,
     status,
@@ -40,6 +41,11 @@ from deepeval_eval.io_utils import sanitize_path
 from deepeval_eval.prompt_style import DEFAULT_PROMPT_STYLE
 from deepeval_eval.sinks import DatabaseResultSink
 from deepeval_eval.sinks.file_sink import format_results_as_csv
+from deepeval_eval.telemetry import (
+    setup_otlp_tracing,
+    telemetry_metrics,
+    telemetry_router,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -382,6 +388,7 @@ class JobManager:
             if not force_rerun:
                 cached_data = self.cache_manager.get(eval_hash)
                 if cached_data:
+                    telemetry_metrics.record_cache_hit()
                     cached_job_id = cached_data.get("job_id", str(uuid.uuid4()))
                     cached_job = {
                         "job_id": cached_job_id,
@@ -401,6 +408,8 @@ class JobManager:
                     self.jobs[cached_job_id] = cached_job
                     self.hash_to_job_id[eval_hash] = cached_job_id
                     return cached_job
+
+            telemetry_metrics.record_cache_miss()
 
             job_id = str(uuid.uuid4())
             job = {
@@ -541,6 +550,7 @@ def execute_evaluation_job(
 
         end_time = time.time()
         eval_time = end_time - start_time
+        telemetry_metrics.record_evaluation(eval_time)
 
         updated_job = job_manager.update_job(
             job_id,
@@ -622,6 +632,17 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
+# Initialize CAIPE OpenTelemetry tracing exporter if configured via environment
+setup_otlp_tracing(app)
+
+
+@app.middleware("http")
+async def telemetry_middleware(request: Request, call_next: Any) -> Response:
+    response = await call_next(request)
+    endpoint = request.url.path
+    telemetry_metrics.record_http_request(endpoint, response.status_code)
+    return response
+
 
 @app.get("/", summary="Root Endpoint", include_in_schema=False)
 def root_endpoint(
@@ -636,9 +657,8 @@ def root_endpoint(
     }
 
 
-@app.get("/health", summary="Health Check")
-def health_check() -> dict[str, str]:
-    return {"status": "healthy"}
+# Mount Health & Telemetry APIRouter (/healthz, /livez, /readyz, /health, /metrics)
+app.include_router(telemetry_router)
 
 
 @app.post(

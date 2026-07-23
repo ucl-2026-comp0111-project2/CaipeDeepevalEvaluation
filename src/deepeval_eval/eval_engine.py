@@ -26,6 +26,7 @@ from deepeval_eval.sinks import (
     ResultSink,
     write_evaluation_results,
 )
+from deepeval_eval.telemetry import trace_evaluation_span
 
 logger = logging.getLogger(__name__)
 
@@ -139,15 +140,24 @@ def run_evaluation(
     metrics: list[Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Execute evaluation run according to EvalConfig settings."""
-    ensure_dirs(config.results_dir)
-    if config.prompt_config:
-        from deepeval_eval.prompt_style import load_prompt_styles_from_config
-
-        load_prompt_styles_from_config(config.prompt_config)
-    env_values = load_dotenv_loose(config.env_file)
-    base_url, api_key, model = resolve_llm_settings(
-        config.env_file, config.llm_base_url, config.llm_api_key, config.llm_model
+    config_dict = (
+        config.to_config_args()
+        if hasattr(config, "to_config_args")
+        else getattr(config, "__dict__", None)
     )
+    span = trace_evaluation_span(
+        getattr(config, "dataset_name", "enterprise"), config_dict
+    )
+    with span:
+        ensure_dirs(config.results_dir)
+        if config.prompt_config:
+            from deepeval_eval.prompt_style import load_prompt_styles_from_config
+
+            load_prompt_styles_from_config(config.prompt_config)
+        env_values = load_dotenv_loose(config.env_file)
+        base_url, api_key, model = resolve_llm_settings(
+            config.env_file, config.llm_base_url, config.llm_api_key, config.llm_model
+        )
 
     llm_client = OpenAICompatibleClient(model=model, api_key=api_key, base_url=base_url)
     if metrics is None:
