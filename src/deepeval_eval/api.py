@@ -551,6 +551,25 @@ def execute_evaluation_job(
             },
         )
 
+        if eval_config.save_to_db and results:
+            try:
+                sink = DatabaseResultSink()
+                sink.save(
+                    results_dir=Path(DEFAULT_RESULTS_DIR),
+                    prefix=eval_config.dataset_name or "enterprise",
+                    results=results,
+                    evaluation_time=eval_time,
+                    config_args=eval_config.to_dict(),
+                )
+                job_manager.mark_saved_to_db(job_id)
+                logger.info(
+                    f"Auto-saved completed evaluation job '{job_id}' to PostgreSQL DB."
+                )
+            except Exception as db_err:
+                logger.warning(
+                    f"Auto-saving results for job '{job_id}' to PostgreSQL DB failed: {db_err}"
+                )
+
         if updated_job:
             cache_manager.set(updated_job["eval_hash"], updated_job)
             job_manager.update_job(job_id, {"results": []})
