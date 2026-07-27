@@ -25,6 +25,7 @@ from fastapi import (
     UploadFile,
     status,
 )
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from deepeval_eval.auth import UserContext, get_current_user
@@ -901,21 +902,52 @@ def get_job_results(
         headers = {
             "Content-Disposition": f"attachment; filename=job_{job_id}_results.csv"
         }
-        return Response(
-            content=csv_content,
+
+        def generate_csv_chunks():
+            yield csv_content
+
+        return StreamingResponse(
+            generate_csv_chunks(),
             media_type="text/csv",
             headers=headers,
         )
 
     job_data = dict(job)
-    job_data["results"] = results
     if results and (
         not job_data.get("summary") or "metrics" not in job_data.get("summary", {})
     ):
         job_data["summary"] = _build_job_summary(
             results, job.get("evaluation_time", 0.0)
         )
-    return EvaluationResultsResponse(**job_data)
+
+    def generate_json_chunks():
+        meta = {
+            "job_id": job_data.get("job_id"),
+            "status": job_data.get("status"),
+            "created_at": job_data.get("created_at"),
+            "completed_at": job_data.get("completed_at"),
+            "cached": job_data.get("cached", False),
+            "eval_hash": job_data.get("eval_hash", ""),
+            "evaluation_time": job_data.get("evaluation_time", 0.0),
+            "config_args": job_data.get("config_args", {}),
+            "summary": job_data.get("summary", {}),
+            "saved_to_db": job_data.get("saved_to_db", False),
+            "user_info": job_data.get("user_info"),
+        }
+        meta_json = json.dumps(meta, ensure_ascii=False)
+        prefix = meta_json[:-1] + ',"results":['
+        yield prefix.encode("utf-8")
+
+        for idx, item in enumerate(results):
+            chunk = ("," if idx > 0 else "") + json.dumps(item, ensure_ascii=False)
+            yield chunk.encode("utf-8")
+
+        yield b"]}"
+
+    return StreamingResponse(
+        generate_json_chunks(),
+        media_type="application/json",
+    )
 
 
 def format_summary_as_csv(job_id: str, job_data: dict[str, Any]) -> str:

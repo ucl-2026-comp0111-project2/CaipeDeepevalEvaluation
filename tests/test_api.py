@@ -746,3 +746,27 @@ def test_build_job_summary_negative():
     assert summary["metrics"]["retrieval_recall"] == 0.0
     assert summary["metrics"]["retrieval_precision"] == 0.0
     assert summary["deepeval_evaluator_usage"]["total_tokens"] == 0
+
+
+def test_get_job_results_streaming_multi_item():
+    """Verify streaming response for multi-item job results delivers valid JSON."""
+    from deepeval_eval.api import JobStatusEnum, cache_manager, job_manager
+
+    job = job_manager.create_job(
+        "hash_streaming_multi", {"dataset_name": "test_streaming"}, force_rerun=True
+    )
+    job["status"] = JobStatusEnum.COMPLETED
+    multi_results = [
+        {"item_id": 1, "question": "q1", "answer": "a1"},
+        {"item_id": 2, "question": "q2", "answer": "a2"},
+        {"item_id": 3, "question": "q3", "answer": "a3"},
+    ]
+    cache_manager.save_job_payload(job["job_id"], multi_results)
+
+    res = client.get(f"/jobs/{job['job_id']}/results")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["job_id"] == job["job_id"]
+    assert len(data["results"]) == 3
+    assert data["results"][0]["item_id"] == 1
+    assert data["results"][2]["item_id"] == 3
