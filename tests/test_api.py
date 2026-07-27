@@ -331,6 +331,94 @@ def test_get_job_results_positive_completed():
     assert len(res.json()["results"]) == 1
 
 
+def test_get_job_summary_positive_completed():
+    """Verify GET /jobs/{job_id}/summary returns summary metadata without full results list."""
+    from deepeval_eval.api import JobStatusEnum, job_manager
+
+    job = job_manager.create_job(
+        "hash_summary_test", {"dataset_name": "test_summary"}, force_rerun=True
+    )
+    job["status"] = JobStatusEnum.COMPLETED
+    job["summary"] = {"total_items": 10, "metrics": {"faithfulness": 0.95}}
+
+    res = client.get(f"/jobs/{job['job_id']}/summary")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["job_id"] == job["job_id"]
+    assert data["status"] == "completed"
+    assert data["summary"]["total_items"] == 10
+    assert data["summary"]["metrics"]["faithfulness"] == 0.95
+    assert "results" not in data
+
+
+def test_get_job_summary_csv_positive():
+    """Verify GET /jobs/{job_id}/summary?format=csv returns CSV representation of summary."""
+    from deepeval_eval.api import JobStatusEnum, job_manager
+
+    job = job_manager.create_job(
+        "hash_summary_csv", {"dataset_name": "test_summary"}, force_rerun=True
+    )
+    job["status"] = JobStatusEnum.COMPLETED
+    job["summary"] = {
+        "total_items": 5,
+        "p50_latency": 1.5,
+        "p95_latency": 2.5,
+        "total_tokens": 1000,
+        "metrics": {"faithfulness": 0.95, "answer_relevancy": 0.88},
+    }
+
+    res = client.get(f"/jobs/{job['job_id']}/summary?format=csv")
+    assert res.status_code == 200
+    assert "text/csv" in res.headers["content-type"]
+    assert (
+        f"attachment; filename=job_{job['job_id']}_summary.csv"
+        in res.headers["content-disposition"]
+    )
+    assert (
+        "job_id,status,evaluation_time_seconds,total_items,p50_latency,p95_latency,total_tokens,faithfulness,answer_relevancy"
+        in res.text
+    )
+    assert job["job_id"] in res.text
+    assert "0.95" in res.text
+
+
+def test_get_job_summary_invalid_format():
+    """Verify GET /jobs/{job_id}/summary?format=invalid returns 400 Bad Request."""
+    from deepeval_eval.api import JobStatusEnum, job_manager
+
+    job = job_manager.create_job(
+        "hash_summary_invalid", {"dataset_name": "test"}, force_rerun=True
+    )
+    job["status"] = JobStatusEnum.COMPLETED
+
+    res = client.get(f"/jobs/{job['job_id']}/summary?format=xml")
+    assert res.status_code == 400
+    assert "Unsupported format" in res.json()["detail"]
+
+
+def test_get_job_summary_negative_pending_and_failed():
+    """Verify GET /jobs/{job_id}/summary returns 400 for pending job and 500 for failed job."""
+    from deepeval_eval.api import JobStatusEnum, job_manager
+
+    # Pending job
+    job_pending = job_manager.create_job(
+        "hash_sum_pending", {"dataset_name": "test"}, force_rerun=True
+    )
+    res_pending = client.get(f"/jobs/{job_pending['job_id']}/summary")
+    assert res_pending.status_code == 400
+
+    # Failed job
+    job_failed = job_manager.create_job(
+        "hash_sum_failed", {"dataset_name": "test"}, force_rerun=True
+    )
+    job_failed["status"] = JobStatusEnum.FAILED
+    job_failed["error"] = "Evaluation engine error"
+
+    res_failed = client.get(f"/jobs/{job_failed['job_id']}/summary")
+    assert res_failed.status_code == 500
+    assert "Evaluation engine error" in res_failed.json()["detail"]
+
+
 @patch("deepeval_eval.api.DatabaseResultSink")
 def test_save_job_results_to_db_positive(mock_sink_cls):
     """Verify POST /jobs/{job_id}/save-db calls PostgresResultSink.save."""
@@ -609,3 +697,52 @@ def test_telemetry_endpoint_removed():
     """Verify non-standard /telemetry endpoint returns HTTP 404 (removed in favor of standard /metrics)."""
     res = client.get("/telemetry")
     assert res.status_code == 404
+
+
+def test_build_job_summary_positive():
+    """Positive test for _build_job_summary with sample result metrics."""
+    from deepeval_eval.api import _build_job_summary
+
+    sample_results = [
+        {
+            "latency": 1.25,
+            "total_tokens": 150,
+            "evaluator_input_tokens": 500,
+            "evaluator_output_tokens": 100,
+            "doc_id_recall": 1.0,
+            "doc_id_precision": 0.5,
+            "metrics": {
+                "FaithfulnessMetric": {"score": 0.9, "success": True},
+                "AnswerRelevancyMetric": {"score": 0.8, "success": True},
+            },
+        }
+    ]
+    summary = _build_job_summary(sample_results, eval_time=2.5)
+
+    assert summary["total_items"] == 1
+    assert summary["evaluation_time_seconds"] == 2.5
+    assert summary["p50_latency"] == 1.25
+    assert summary["total_tokens"] == 150
+    assert "metrics" in summary
+    assert summary["metrics"]["faithfulness"] == 0.9
+    assert summary["metrics"]["answer_relevancy"] == 0.8
+    assert summary["metrics"]["retrieval_recall"] == 1.0
+    assert summary["metrics"]["retrieval_precision"] == 0.5
+    assert summary["deepeval_evaluator_usage"]["prompt_tokens"] == 500
+    assert summary["deepeval_evaluator_usage"]["completion_tokens"] == 100
+    assert summary["deepeval_evaluator_usage"]["total_tokens"] == 600
+
+
+def test_build_job_summary_negative():
+    """Negative test for _build_job_summary with empty evaluation results."""
+    from deepeval_eval.api import _build_job_summary
+
+    summary = _build_job_summary([], eval_time=0.0)
+
+    assert summary["total_items"] == 0
+    assert summary["evaluation_time_seconds"] == 0.0
+    assert summary["p50_latency"] == 0.0
+    assert summary["total_tokens"] == 0
+    assert summary["metrics"]["retrieval_recall"] == 0.0
+    assert summary["metrics"]["retrieval_precision"] == 0.0
+    assert summary["deepeval_evaluator_usage"]["total_tokens"] == 0

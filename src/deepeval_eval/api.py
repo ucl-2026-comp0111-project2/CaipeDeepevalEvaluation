@@ -166,6 +166,22 @@ class EvaluationResultsResponse(BaseModel):
     )
 
 
+class EvaluationSummaryResponse(BaseModel):
+    job_id: str
+    status: JobStatusEnum
+    created_at: float
+    completed_at: float | None = None
+    cached: bool = False
+    eval_hash: str
+    evaluation_time: float = 0.0
+    config_args: dict[str, Any] = Field(default_factory=dict)
+    summary: dict[str, Any] = Field(default_factory=dict)
+    saved_to_db: bool = False
+    user_info: dict[str, Any] | None = Field(
+        default=None, description="Authenticated user/client identity details"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Deduplication Hashing & Cache Management (Cache-Aside Pattern)
 # ---------------------------------------------------------------------------
@@ -496,6 +512,45 @@ job_manager = JobManager(cache_manager)
 # ---------------------------------------------------------------------------
 
 
+def _build_job_summary(
+    results: list[dict[str, Any]], eval_time: float
+) -> dict[str, Any]:
+    """Compute metrics aggregation stats and summary for job output."""
+    from deepeval_eval.sinks import (
+        calculate_latency_percentiles,
+        categorize_failure_causes,
+        compute_all_metric_averages,
+    )
+
+    latencies = [r.get("latency", 0.0) for r in results if "latency" in r]
+    p50_latency, p95_latency = calculate_latency_percentiles(latencies)
+    total_tokens_sum = sum(r.get("total_tokens", 0) for r in results)
+    all_metric_averages = compute_all_metric_averages(results)
+    failure_counts = categorize_failure_causes(results)
+
+    evaluator_prompt_tokens = sum(r.get("evaluator_input_tokens", 0) for r in results)
+    evaluator_completion_tokens = sum(
+        r.get("evaluator_output_tokens", 0) for r in results
+    )
+    evaluator_total_tokens = evaluator_prompt_tokens + evaluator_completion_tokens
+
+    return {
+        "total_items": len(results),
+        "evaluation_time_seconds": round(eval_time, 2),
+        "p50_latency": round(p50_latency, 4),
+        "p95_latency": round(p95_latency, 4),
+        "total_tokens": total_tokens_sum,
+        "metrics": all_metric_averages,
+        "failure_causes": failure_counts,
+        "deepeval_evaluator_usage": {
+            "evaluation_time_seconds": round(eval_time, 2),
+            "prompt_tokens": evaluator_prompt_tokens,
+            "completion_tokens": evaluator_completion_tokens,
+            "total_tokens": evaluator_total_tokens,
+        },
+    }
+
+
 def execute_evaluation_job(
     job_id: str, req: EvaluationRequest, temp_file_path: str | None = None
 ) -> None:
@@ -552,6 +607,8 @@ def execute_evaluation_job(
         eval_time = end_time - start_time
         telemetry_metrics.record_evaluation(eval_time)
 
+        summary = _build_job_summary(results, eval_time)
+
         updated_job = job_manager.update_job(
             job_id,
             {
@@ -559,10 +616,7 @@ def execute_evaluation_job(
                 "completed_at": end_time,
                 "evaluation_time": eval_time,
                 "results": results,
-                "summary": {
-                    "total_items": len(results),
-                    "evaluation_time_seconds": round(eval_time, 2),
-                },
+                "summary": summary,
             },
         )
 
@@ -855,7 +909,108 @@ def get_job_results(
 
     job_data = dict(job)
     job_data["results"] = results
+    if results and (
+        not job_data.get("summary") or "metrics" not in job_data.get("summary", {})
+    ):
+        job_data["summary"] = _build_job_summary(
+            results, job.get("evaluation_time", 0.0)
+        )
     return EvaluationResultsResponse(**job_data)
+
+
+def format_summary_as_csv(job_id: str, job_data: dict[str, Any]) -> str:
+    """Format evaluation summary metadata and aggregated metrics into CSV string representation."""
+    import csv
+    import io
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    summary = job_data.get("summary", {})
+    metrics = summary.get("metrics", {})
+
+    headers = [
+        "job_id",
+        "status",
+        "evaluation_time_seconds",
+        "total_items",
+        "p50_latency",
+        "p95_latency",
+        "total_tokens",
+    ] + list(metrics.keys())
+
+    values = [
+        job_id,
+        job_data.get("status", ""),
+        job_data.get("evaluation_time", 0.0),
+        summary.get("total_items", 0),
+        summary.get("p50_latency", 0.0),
+        summary.get("p95_latency", 0.0),
+        summary.get("total_tokens", 0),
+    ] + [metrics[k] for k in metrics]
+
+    writer.writerow(headers)
+    writer.writerow(values)
+    return output.getvalue()
+
+
+@app.get(
+    "/jobs/{job_id}/summary",
+    summary="Get Evaluation Job Summary Only",
+    tags=["Evaluation Results"],
+)
+def get_job_summary(
+    job_id: str,
+    format: str = Query("json", description="Output format: 'json' or 'csv'"),
+    user: UserContext = Depends(get_current_user),
+) -> Any:
+    """Retrieve only the summary metadata and aggregated metrics for a completed job in JSON or CSV format."""
+    job = job_manager.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
+
+    if job["status"] == JobStatusEnum.FAILED:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Job '{job_id}' failed with error: {job.get('error')}",
+        )
+
+    if job["status"] != JobStatusEnum.COMPLETED:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Job '{job_id}' is still in status '{job['status']}'",
+        )
+
+    requested_format = format.lower()
+    if requested_format not in ("json", "csv"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported format '{format}'. Supported: 'json', 'csv'.",
+        )
+
+    results = job_manager.get_job_results_payload(job_id)
+    job_data = dict(job)
+    job_data.pop("results", None)
+
+    if results and (
+        not job_data.get("summary") or "metrics" not in job_data.get("summary", {})
+    ):
+        job_data["summary"] = _build_job_summary(
+            results, job.get("evaluation_time", 0.0)
+        )
+
+    if requested_format == "csv":
+        csv_content = format_summary_as_csv(job_id, job_data)
+        headers = {
+            "Content-Disposition": f"attachment; filename=job_{job_id}_summary.csv"
+        }
+        return Response(
+            content=csv_content,
+            media_type="text/csv",
+            headers=headers,
+        )
+
+    return EvaluationSummaryResponse(**job_data)
 
 
 @app.post(
