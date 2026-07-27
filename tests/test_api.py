@@ -770,3 +770,19 @@ def test_get_job_results_streaming_multi_item():
     assert len(data["results"]) == 3
     assert data["results"][0]["item_id"] == 1
     assert data["results"][2]["item_id"] == 3
+
+
+def test_get_job_results_streaming_none_results():
+    """Verify streaming response when results payload is None/missing."""
+    from deepeval_eval.api import JobStatusEnum, job_manager
+
+    job = job_manager.create_job(
+        "hash_streaming_none", {"dataset_name": "test_none"}, force_rerun=True
+    )
+    job["status"] = JobStatusEnum.COMPLETED
+
+    res = client.get(f"/jobs/{job['job_id']}/results")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["job_id"] == job["job_id"]
+    assert data["results"] == []

@@ -9,6 +9,7 @@ import tempfile
 import threading
 import time
 import uuid
+from collections.abc import Iterator
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -25,6 +26,7 @@ from fastapi import (
     UploadFile,
     status,
 )
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -903,8 +905,8 @@ def get_job_results(
             "Content-Disposition": f"attachment; filename=job_{job_id}_results.csv"
         }
 
-        def generate_csv_chunks():
-            yield csv_content
+        def generate_csv_chunks() -> Iterator[bytes]:
+            yield csv_content.encode("utf-8")
 
         return StreamingResponse(
             generate_csv_chunks(),
@@ -913,14 +915,15 @@ def get_job_results(
         )
 
     job_data = dict(job)
-    if results and (
+    safe_results = results or []
+    if safe_results and (
         not job_data.get("summary") or "metrics" not in job_data.get("summary", {})
     ):
         job_data["summary"] = _build_job_summary(
-            results, job.get("evaluation_time", 0.0)
+            safe_results, job.get("evaluation_time", 0.0)
         )
 
-    def generate_json_chunks():
+    def generate_json_chunks() -> Iterator[bytes]:
         meta = {
             "job_id": job_data.get("job_id"),
             "status": job_data.get("status"),
@@ -934,12 +937,19 @@ def get_job_results(
             "saved_to_db": job_data.get("saved_to_db", False),
             "user_info": job_data.get("user_info"),
         }
-        meta_json = json.dumps(meta, ensure_ascii=False)
-        prefix = meta_json[:-1] + ',"results":['
+        safe_meta = jsonable_encoder(meta)
+        meta_json = json.dumps(safe_meta, ensure_ascii=False)
+        prefix = (
+            meta_json[:-1] + ',"results":['
+            if meta_json.endswith("}")
+            else meta_json + ',"results":['
+        )
         yield prefix.encode("utf-8")
 
-        for idx, item in enumerate(results):
-            chunk = ("," if idx > 0 else "") + json.dumps(item, ensure_ascii=False)
+        for idx, item in enumerate(safe_results):
+            chunk = ("," if idx > 0 else "") + json.dumps(
+                jsonable_encoder(item), ensure_ascii=False
+            )
             yield chunk.encode("utf-8")
 
         yield b"]}"
