@@ -401,7 +401,12 @@ class JobManager:
                     if j["status"] in (JobStatusEnum.COMPLETED, JobStatusEnum.FAILED)
                 ]
                 for jid in finished_ids[:200]:
-                    self.jobs.pop(jid, None)
+                    evicted_job = self.jobs.pop(jid, None)
+                    if (
+                        evicted_job
+                        and evicted_job.get("eval_hash") in self.hash_to_job_id
+                    ):
+                        del self.hash_to_job_id[evicted_job["eval_hash"]]
 
             # Check cache deduplication first
             if not force_rerun:
@@ -948,7 +953,7 @@ def get_job_results(
 
         for idx, item in enumerate(safe_results):
             chunk = ("," if idx > 0 else "") + json.dumps(
-                jsonable_encoder(item), ensure_ascii=False
+                item, ensure_ascii=False, default=str
             )
             yield chunk.encode("utf-8")
 
