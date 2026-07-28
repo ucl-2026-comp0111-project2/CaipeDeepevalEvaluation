@@ -68,10 +68,10 @@ def parse_indices(indices_str: str, max_len: int) -> set[int]:
         if "-" in part:
             try:
                 start_str, end_str = part.split("-", 1)
-                start = int(start_str.strip())
-                end = int(end_str.strip())
-                for i in range(start, end + 1):
-                    if 1 <= i <= max_len:
+                start = max(1, int(start_str.strip()))
+                end = min(max_len, int(end_str.strip()))
+                if start <= end:
+                    for i in range(start, end + 1):
                         indices.add(i)
             except ValueError:
                 pass

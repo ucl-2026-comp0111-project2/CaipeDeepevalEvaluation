@@ -43,10 +43,11 @@ class OpenAICompatibleClient:
 
     @property
     def client(self) -> httpx.Client:
-        if self._client is None or self._client.is_closed:
-            limits = httpx.Limits(max_keepalive_connections=20, max_connections=100)
-            self._client = httpx.Client(timeout=300.0, limits=limits)
-        return self._client
+        with self._lock:
+            if self._client is None or self._client.is_closed:
+                limits = httpx.Limits(max_keepalive_connections=20, max_connections=100)
+                self._client = httpx.Client(timeout=300.0, limits=limits)
+            return self._client
 
     def close(self) -> None:
         """Close underlying HTTP client connection pool."""

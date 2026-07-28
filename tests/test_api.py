@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -18,7 +19,16 @@ from deepeval_eval.api.app import (
     sanitize_config_args,
 )
 
+import pytest
+
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def enable_unauthenticated_access_for_api_tests():
+    os.environ["ALLOW_UNAUTHENTICATED_ACCESS"] = "true"
+    yield
+    os.environ.pop("ALLOW_UNAUTHENTICATED_ACCESS", None)
 
 
 # ---------------------------------------------------------------------------

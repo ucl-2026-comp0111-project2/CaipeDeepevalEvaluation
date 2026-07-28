@@ -95,7 +95,7 @@ def allow_unauthenticated_access() -> bool:
         if val is not None and str(val).strip().lower() in ("false", "0", "no", "off"):
             return False
 
-    return True
+    return False
 
 
 class OIDCProvider:

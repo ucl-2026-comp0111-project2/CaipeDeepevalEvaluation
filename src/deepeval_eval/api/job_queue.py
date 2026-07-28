@@ -147,6 +147,11 @@ class DatabaseManager:
                     )
                 conn.commit()
             except Exception as exc:
+                if conn is not None and hasattr(conn, "rollback"):
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
                 logger.warning(f"PostgreSQL schema initialization skipped: {exc}")
             finally:
                 if conn is not None and not getattr(conn, "closed", False):
@@ -217,6 +222,20 @@ class PersistentJobQueue:
         # In-memory fallback storage when PostgreSQL is not configured
         self._memory_jobs: dict[str, dict[str, Any]] = {}
         self._memory_queue: deque[str] = deque()
+        self._max_memory_jobs = 1000
+
+    def _evict_old_memory_jobs(self) -> None:
+        """Evict completed/failed jobs from memory storage if exceeding maximum capacity."""
+        if len(self._memory_jobs) <= self._max_memory_jobs:
+            return
+        candidates = [
+            jid
+            for jid, jdata in self._memory_jobs.items()
+            if jdata.get("status") in ("completed", "failed")
+            and jid not in self._active_jobs
+        ]
+        for jid in candidates[: len(self._memory_jobs) - self._max_memory_jobs]:
+            self._memory_jobs.pop(jid, None)
 
     def set_task_executor(self, task_fn: Callable[[str, dict[str, Any]], None]) -> None:
         """Register the job execution function."""
@@ -271,6 +290,7 @@ class PersistentJobQueue:
             with self._lock:
                 self._memory_jobs[job_id] = job_record
                 self._memory_queue.append(job_id)
+                self._evict_old_memory_jobs()
 
         self._dispatch_next_if_possible()
         return job_record

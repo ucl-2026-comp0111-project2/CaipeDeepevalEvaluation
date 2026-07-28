@@ -17,13 +17,11 @@ SSE event structure observed from agent gateway:
 
 from __future__ import annotations
 
-import base64
 import hashlib
 import json
 import logging
 import os
 import re
-import subprocess
 import time
 import uuid
 from dataclasses import dataclass
@@ -352,38 +350,6 @@ class AgenticRetriever(BaseRetriever):
         """Fetch OIDC token dynamically using client credentials, falling back to environment variables."""
         client_id = os.getenv("CAIPE_CLIENT_ID") or os.getenv("CLIENT_ID")
         client_secret = os.getenv("CAIPE_CLIENT_SECRET") or os.getenv("CLIENT_SECRET")
-
-        if not client_id or not client_secret:
-            logger.info(
-                "Credentials not in environment. Attempting to fetch from Kubernetes secret 'caipe-ui-secret'..."
-            )
-            try:
-                client_id_cmd = "kubectl get secret caipe-ui-secret -n caipe -o jsonpath='{.data.OIDC_CLIENT_ID}'"
-                client_secret_cmd = "kubectl get secret caipe-ui-secret -n caipe -o jsonpath='{.data.OIDC_CLIENT_SECRET}'"
-                client_id_b64 = (
-                    subprocess.check_output(
-                        client_id_cmd, shell=True, stderr=subprocess.DEVNULL
-                    )
-                    .decode()
-                    .strip()
-                )
-                client_secret_b64 = (
-                    subprocess.check_output(
-                        client_secret_cmd, shell=True, stderr=subprocess.DEVNULL
-                    )
-                    .decode()
-                    .strip()
-                )
-                if client_id_b64 and client_secret_b64:
-                    client_id = base64.b64decode(client_id_b64).decode()
-                    client_secret = base64.b64decode(client_secret_b64).decode()
-                    os.environ["CAIPE_CLIENT_ID"] = client_id
-                    os.environ["CAIPE_CLIENT_SECRET"] = client_secret
-                    logger.info(
-                        "Successfully fetched OIDC credentials from Kubernetes."
-                    )
-            except Exception as e:
-                logger.debug("Could not fetch credentials from Kubernetes: %s", e)
 
         if client_id and client_secret:
             try:
