@@ -15,6 +15,18 @@ DEFAULT_DOWNLOADS_DIR = Path.home() / "Downloads"
 DEFAULT_GATE_CONFIG = WORK_DIR / "gate_thresholds.yaml"
 
 
+def get_max_concurrent_jobs() -> int:
+    """Resolve maximum concurrent evaluation jobs from environment settings (default: 1)."""
+    raw = os.environ.get("EVAL_MAX_CONCURRENT_JOBS") or os.environ.get(
+        "MAX_CONCURRENT_JOBS", "1"
+    )
+    try:
+        val = int(raw)
+        return max(1, val)
+    except ValueError:
+        return 1
+
+
 def ensure_dirs(*paths: Path) -> None:
     for path in paths:
         path.mkdir(parents=True, exist_ok=True)
