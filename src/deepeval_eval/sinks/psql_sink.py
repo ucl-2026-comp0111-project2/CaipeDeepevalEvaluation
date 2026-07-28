@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import time
 from pathlib import Path
 from typing import Any
@@ -47,7 +46,7 @@ class RunSummaryPayload(BaseModel):
     deepeval_evaluator_usage: EvaluatorUsage = Field(default_factory=EvaluatorUsage)
 
 
-class DatabaseResultSink:
+class PostgresResultSink:
     """Persists evaluation run directly to PostgreSQL tables."""
 
     def __init__(
@@ -55,8 +54,11 @@ class DatabaseResultSink:
         connection_string: str | None = None,
         auto_init: bool = True,
     ):
+        from deepeval_eval.job_queue import DatabaseManager
+
         self.connection_string = connection_string
-        if auto_init:
+        self.db_manager = DatabaseManager(connection_string=connection_string)
+        if auto_init and self.db_manager.is_postgres():
             try:
                 self.init_db()
             except Exception as exc:
@@ -65,58 +67,27 @@ class DatabaseResultSink:
                 )
 
     def _get_connection(self) -> Any:
-        import psycopg2
-
-        conn_str = self.connection_string or os.environ.get("DATABASE_URL")
-        if conn_str:
-            return psycopg2.connect(conn_str)
-
-        host = (
-            os.environ.get("POSTGRES_HOST")
-            or os.environ.get("PGHOST")
-            or os.environ.get("DB_HOST", "localhost")
-        )
-        port = (
-            os.environ.get("POSTGRES_PORT")
-            or os.environ.get("PGPORT")
-            or os.environ.get("DB_PORT", "5432")
-        )
-        dbname = (
-            os.environ.get("POSTGRES_DB")
-            or os.environ.get("PGDATABASE")
-            or os.environ.get("DB_NAME", "caipe_eval")
-        )
-        user = (
-            os.environ.get("POSTGRES_USER")
-            or os.environ.get("PGUSER")
-            or os.environ.get("DB_USER", "postgres")
-        )
-        password = (
-            os.environ.get("POSTGRES_PASSWORD")
-            or os.environ.get("PGPASSWORD")
-            or os.environ.get("DB_PASSWORD", "")
-        )
-        sslmode = os.environ.get("PGSSLMODE", "prefer")
-
-        return psycopg2.connect(
-            host=host,
-            port=port,
-            dbname=dbname,
-            user=user,
-            password=password,
-            sslmode=sslmode,
-        )
+        return self.db_manager.get_connection()
 
     def query_runs(self, limit: int = 10) -> list[dict[str, Any]]:
-        """Query recent evaluation runs stored in PostgreSQL database."""
+        """Query recent evaluation runs stored in database."""
+        if not self.db_manager.is_postgres():
+            logger.warning("PostgreSQL is not configured; returning empty runs list.")
+            return []
+
         try:
+            import psycopg2
             from psycopg2.extras import RealDictCursor
-        except ImportError:
+
+            if psycopg2 is None:
+                return []
+        except (ImportError, ModuleNotFoundError):
             logger.warning("psycopg2 is not installed; skipping database query.")
             return []
 
-        conn = self._get_connection()
+        conn = None
         try:
+            conn = self._get_connection()
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(
                     """
@@ -130,7 +101,11 @@ class DatabaseResultSink:
                 rows = cur.fetchall()
             return [dict(r) for r in rows]
         finally:
-            if conn is not None and not conn.closed:
+            if (
+                conn is not None
+                and hasattr(conn, "close")
+                and not getattr(conn, "closed", False)
+            ):
                 conn.close()
 
     def init_db(self, conn: Any | None = None) -> None:
@@ -196,8 +171,15 @@ class DatabaseResultSink:
         config_args: dict[str, Any],
     ) -> None:
         try:
+            import psycopg2
             from psycopg2.extras import execute_values
-        except ImportError:
+
+            if psycopg2 is None:
+                logger.warning(
+                    "psycopg2 is not installed; skipping database persistence."
+                )
+                return
+        except (ImportError, ModuleNotFoundError):
             logger.warning("psycopg2 is not installed; skipping database persistence.")
             return
 
@@ -366,9 +348,15 @@ class DatabaseResultSink:
                 f"Persisted run '{run_id}' ({len(results)} rows) to Postgres DB."
             )
         except Exception:
-            if conn is not None and not conn.closed:
-                conn.rollback()
+            if conn is not None and hasattr(conn, "rollback"):
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
             logger.exception("Failed to insert eval results into database.")
         finally:
-            if conn is not None and not conn.closed:
-                conn.close()
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception:
+                    pass

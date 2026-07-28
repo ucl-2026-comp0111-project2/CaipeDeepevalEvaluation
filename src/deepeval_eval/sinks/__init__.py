@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Any
 
 from deepeval_eval.sinks.composite_sink import CompositeResultSink
-from deepeval_eval.sinks.db_sink import DatabaseResultSink
 from deepeval_eval.sinks.file_sink import FileResultSink
 from deepeval_eval.sinks.metrics_aggregator import (
     calculate_latency_percentiles,
@@ -14,6 +13,7 @@ from deepeval_eval.sinks.metrics_aggregator import (
     discover_all_metrics,
 )
 from deepeval_eval.sinks.protocol import ResultSink
+from deepeval_eval.sinks.psql_sink import PostgresResultSink
 
 
 def write_evaluation_results(
@@ -34,7 +34,7 @@ def write_evaluation_results(
 __all__ = [
     "ResultSink",
     "FileResultSink",
-    "DatabaseResultSink",
+    "PostgresResultSink",
     "CompositeResultSink",
     "write_evaluation_results",
     "discover_all_metrics",
