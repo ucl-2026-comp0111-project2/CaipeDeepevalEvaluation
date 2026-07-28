@@ -16,7 +16,7 @@ from prometheus_client import (
     generate_latest,
 )
 
-from deepeval_eval.config import DEFAULT_ENV_FILE, load_dotenv_loose
+from deepeval_eval.core.config import DEFAULT_ENV_FILE, load_dotenv_loose
 from deepeval_eval.sinks import PostgresResultSink
 
 logger = logging.getLogger(__name__)
@@ -239,7 +239,7 @@ def liveness_probe() -> dict[str, str]:
 )
 def readiness_probe(response: Response) -> dict[str, Any]:
     """Shallow readiness check verifying process and local storage cache readiness."""
-    from deepeval_eval.api import cache_manager
+    from deepeval_eval.api.app import cache_manager
 
     checks = {
         "cache_dir": "connected" if cache_manager.cache_dir.exists() else "error",
@@ -258,7 +258,7 @@ def readiness_probe(response: Response) -> dict[str, Any]:
 )
 def health_check(response: Response) -> dict[str, Any]:
     """Deep health check returning rich diagnostic details per component."""
-    from deepeval_eval.api import cache_manager
+    from deepeval_eval.api.app import cache_manager
 
     cache_ok = cache_manager.cache_dir.exists()
     job_mgr_ok = True
@@ -299,7 +299,7 @@ def health_check(response: Response) -> dict[str, Any]:
 )
 def metrics_endpoint() -> Response:
     """Return operational metrics in standard Prometheus Exposition format for Prometheus/Mimir scrapers."""
-    from deepeval_eval.api import job_manager
+    from deepeval_eval.api.app import job_manager
 
     content, media_type = telemetry_metrics.export_prometheus(job_manager)
     return Response(content=content, media_type=media_type)

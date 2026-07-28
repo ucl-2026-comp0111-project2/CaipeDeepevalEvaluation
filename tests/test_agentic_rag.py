@@ -4,7 +4,7 @@ import unittest.mock as mock
 
 import requests
 
-from deepeval_eval.agentic_rag import (
+from deepeval_eval.engine.agentic_rag import (
     AgenticRAG,
     AgenticRetriever,
     _dedupe_preserve_order,
@@ -264,7 +264,7 @@ def test_agentic_rag_init_negative():
 
 
 def test_dedupe_and_merge_contexts_dup() -> None:
-    from deepeval_eval.agentic_rag import _dedupe_and_merge_contexts
+    from deepeval_eval.engine.agentic_rag import _dedupe_and_merge_contexts
 
     # Duplicate doc_id with longer content replaces shorter content + invalid items
     items = [
@@ -282,7 +282,7 @@ def test_dedupe_and_merge_contexts_dup() -> None:
 
 
 def test_agentic_rag_usage_artifacts_parsing() -> None:
-    from deepeval_eval.agentic_rag import AgenticRAG
+    from deepeval_eval.engine.agentic_rag import AgenticRAG
 
     rag = AgenticRAG(agent_api_url="http://localhost:8000")
     rag._agentic_retriever.last_answer = "Ans"
@@ -311,7 +311,7 @@ def test_agentic_rag_usage_artifacts_parsing() -> None:
 
 
 def test_agentic_retriever_error_fallback() -> None:
-    from deepeval_eval.agentic_rag import AgenticRetriever
+    from deepeval_eval.engine.agentic_rag import AgenticRetriever
 
     retriever = AgenticRetriever(agent_api_url="http://localhost:8000")
     with mock.patch.object(
@@ -324,7 +324,7 @@ def test_agentic_retriever_error_fallback() -> None:
 
 
 def test_agentic_rag_query_default_run_id() -> None:
-    from deepeval_eval.agentic_rag import AgenticRAG
+    from deepeval_eval.engine.agentic_rag import AgenticRAG
 
     rag = AgenticRAG(agent_api_url="http://localhost:8000")
     rag._agentic_retriever.last_answer = "Ans"
@@ -338,7 +338,7 @@ def test_agentic_rag_query_default_run_id() -> None:
         assert len(res["retrieved_docs"]) == 1
 
 
-@mock.patch("deepeval_eval.agentic_rag.AgenticRAG.export_traces_to_log")
+@mock.patch("deepeval_eval.engine.agentic_rag.AgenticRAG.export_traces_to_log")
 def test_agentic_rag_query_positive(mock_export):
     # Positive: successful query and usage parsing
     rag = AgenticRAG(use_a2a=True)
@@ -395,7 +395,7 @@ def test_agentic_rag_query_positive(mock_export):
         assert res["logs"] == "log_path.json"
 
 
-@mock.patch("deepeval_eval.agentic_rag.AgenticRAG.export_traces_to_log")
+@mock.patch("deepeval_eval.engine.agentic_rag.AgenticRAG.export_traces_to_log")
 def test_agentic_rag_query_negative(mock_export):
     # Negative: exception during query flow
     rag = AgenticRAG(use_a2a=True)

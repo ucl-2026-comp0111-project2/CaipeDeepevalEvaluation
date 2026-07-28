@@ -30,8 +30,14 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from deepeval_eval.auth import UserContext, get_current_user
-from deepeval_eval.config import (
+from deepeval_eval.api.auth import UserContext, get_current_user
+from deepeval_eval.api.job_queue import DatabaseManager, PersistentJobQueue
+from deepeval_eval.api.telemetry import (
+    setup_otlp_tracing,
+    telemetry_metrics,
+    telemetry_router,
+)
+from deepeval_eval.core.config import (
     DEFAULT_CACHE_DIR,
     DEFAULT_DATA_DIR,
     DEFAULT_ENV_FILE,
@@ -39,17 +45,15 @@ from deepeval_eval.config import (
     DEFAULT_RESULTS_DIR,
     load_dotenv_loose,
 )
-from deepeval_eval.eval_engine import EvalConfig, _build_rag_client, run_evaluation
-from deepeval_eval.io_utils import sanitize_path
-from deepeval_eval.job_queue import DatabaseManager, PersistentJobQueue
-from deepeval_eval.prompt_style import DEFAULT_PROMPT_STYLE
+from deepeval_eval.core.io_utils import sanitize_path
+from deepeval_eval.core.prompt_style import DEFAULT_PROMPT_STYLE
+from deepeval_eval.engine.eval_engine import (
+    EvalConfig,
+    _build_rag_client,
+    run_evaluation,
+)
 from deepeval_eval.sinks import PostgresResultSink
 from deepeval_eval.sinks.file_sink import format_results_as_csv
-from deepeval_eval.telemetry import (
-    setup_otlp_tracing,
-    telemetry_metrics,
-    telemetry_router,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -1221,7 +1225,7 @@ def run_server(host: str = "0.0.0.0", port: int = 8000) -> None:
     """CLI launcher for starting the Uvicorn ASGI server."""
     import uvicorn
 
-    uvicorn.run("deepeval_eval.api:app", host=host, port=port, reload=False)
+    uvicorn.run("deepeval_eval.api.app:app", host=host, port=port, reload=False)
 
 
 if __name__ == "__main__":

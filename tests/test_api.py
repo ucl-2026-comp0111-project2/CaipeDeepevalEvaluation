@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 from fastapi.testclient import TestClient
 
-from deepeval_eval.api import (
+from deepeval_eval.api.app import (
     JobManager,
     JobStatusEnum,
     LocalCacheManager,
@@ -148,13 +148,13 @@ def test_job_manager_get_negative(tmp_path: Path):
 # ---------------------------------------------------------------------------
 
 
-@patch("deepeval_eval.api.run_evaluation")
-@patch("deepeval_eval.api._build_rag_client")
+@patch("deepeval_eval.api.app.run_evaluation")
+@patch("deepeval_eval.api.app._build_rag_client")
 def test_execute_evaluation_job_positive(mock_build_rag, mock_run_eval, tmp_path: Path):
     """Verify execute_evaluation_job updates job status to COMPLETED."""
     mock_run_eval.return_value = [{"question": "q1", "metrics": {}}]
 
-    from deepeval_eval.api import EvaluationRequest, job_manager
+    from deepeval_eval.api.app import EvaluationRequest, job_manager
 
     eval_hash = "exec_hash_pos"
     req = EvaluationRequest(dataset_name="enterprise", max_items=1)
@@ -168,11 +168,13 @@ def test_execute_evaluation_job_positive(mock_build_rag, mock_run_eval, tmp_path
     assert len(results) == 1
 
 
-@patch("deepeval_eval.api.run_evaluation", side_effect=ValueError("Eval engine error"))
-@patch("deepeval_eval.api._build_rag_client")
+@patch(
+    "deepeval_eval.api.app.run_evaluation", side_effect=ValueError("Eval engine error")
+)
+@patch("deepeval_eval.api.app._build_rag_client")
 def test_execute_evaluation_job_negative(mock_build_rag, mock_run_eval):
     """Verify execute_evaluation_job handles failure gracefully."""
-    from deepeval_eval.api import EvaluationRequest, job_manager
+    from deepeval_eval.api.app import EvaluationRequest, job_manager
 
     eval_hash = "exec_hash_neg"
     req = EvaluationRequest(dataset_name="enterprise")
@@ -232,7 +234,7 @@ def test_swagger_docs_accessible():
     assert "swagger-ui" in res.text.lower() or "html" in res.text.lower()
 
 
-@patch("deepeval_eval.api.execute_evaluation_job")
+@patch("deepeval_eval.api.app.execute_evaluation_job")
 def test_submit_eval_job_positive(mock_execute):
     """Verify POST /eval/jobs returns 202 Accepted and launches background task."""
     payload = {
@@ -258,7 +260,7 @@ def test_submit_eval_job_negative_invalid_body():
     assert res.status_code == 422
 
 
-@patch("deepeval_eval.api.execute_evaluation_job")
+@patch("deepeval_eval.api.app.execute_evaluation_job")
 def test_submit_eval_job_with_upload_positive(mock_execute):
     """Verify POST /eval/jobs/upload accepts multipart dataset file upload."""
     file_content = b'[{"question": "What is CAIPE?"}]'
@@ -307,7 +309,7 @@ def test_get_job_status_negative_not_found():
 
 def test_get_job_results_negative_pending():
     """Verify GET /jobs/{job_id}/results returns 400 if job is not completed yet."""
-    from deepeval_eval.api import job_manager
+    from deepeval_eval.api.app import job_manager
 
     job = job_manager.create_job(
         "hash_pending", {"dataset_name": "test"}, force_rerun=True
@@ -318,7 +320,7 @@ def test_get_job_results_negative_pending():
 
 def test_get_job_results_positive_completed():
     """Verify GET /jobs/{job_id}/results returns results for completed job."""
-    from deepeval_eval.api import JobStatusEnum, cache_manager, job_manager
+    from deepeval_eval.api.app import JobStatusEnum, cache_manager, job_manager
 
     job = job_manager.create_job(
         "hash_completed", {"dataset_name": "test"}, force_rerun=True
@@ -333,7 +335,7 @@ def test_get_job_results_positive_completed():
 
 def test_get_job_summary_positive_completed():
     """Verify GET /jobs/{job_id}/summary returns summary metadata without full results list."""
-    from deepeval_eval.api import JobStatusEnum, job_manager
+    from deepeval_eval.api.app import JobStatusEnum, job_manager
 
     job = job_manager.create_job(
         "hash_summary_test", {"dataset_name": "test_summary"}, force_rerun=True
@@ -353,7 +355,7 @@ def test_get_job_summary_positive_completed():
 
 def test_get_job_summary_csv_positive():
     """Verify GET /jobs/{job_id}/summary?format=csv returns CSV representation of summary."""
-    from deepeval_eval.api import JobStatusEnum, job_manager
+    from deepeval_eval.api.app import JobStatusEnum, job_manager
 
     job = job_manager.create_job(
         "hash_summary_csv", {"dataset_name": "test_summary"}, force_rerun=True
@@ -384,7 +386,7 @@ def test_get_job_summary_csv_positive():
 
 def test_get_job_summary_invalid_format():
     """Verify GET /jobs/{job_id}/summary?format=invalid returns 400 Bad Request."""
-    from deepeval_eval.api import JobStatusEnum, job_manager
+    from deepeval_eval.api.app import JobStatusEnum, job_manager
 
     job = job_manager.create_job(
         "hash_summary_invalid", {"dataset_name": "test"}, force_rerun=True
@@ -398,7 +400,7 @@ def test_get_job_summary_invalid_format():
 
 def test_get_job_summary_negative_pending_and_failed():
     """Verify GET /jobs/{job_id}/summary returns 400 for pending job and 500 for failed job."""
-    from deepeval_eval.api import JobStatusEnum, job_manager
+    from deepeval_eval.api.app import JobStatusEnum, job_manager
 
     # Pending job
     job_pending = job_manager.create_job(
@@ -419,10 +421,10 @@ def test_get_job_summary_negative_pending_and_failed():
     assert "Evaluation engine error" in res_failed.json()["detail"]
 
 
-@patch("deepeval_eval.api.PostgresResultSink")
+@patch("deepeval_eval.api.app.PostgresResultSink")
 def test_save_job_results_to_db_positive(mock_sink_cls):
     """Verify POST /jobs/{job_id}/save-db calls PostgresResultSink.save."""
-    from deepeval_eval.api import JobStatusEnum, cache_manager, job_manager
+    from deepeval_eval.api.app import JobStatusEnum, cache_manager, job_manager
 
     mock_sink_instance = MagicMock()
     mock_sink_cls.return_value = mock_sink_instance
@@ -441,7 +443,7 @@ def test_save_job_results_to_db_positive(mock_sink_cls):
 
 def test_save_job_results_to_db_negative_not_completed():
     """Verify POST /jobs/{job_id}/save-db returns 400 for incomplete jobs."""
-    from deepeval_eval.api import job_manager
+    from deepeval_eval.api.app import job_manager
 
     job = job_manager.create_job(
         "hash_db_save_neg", {"dataset_name": "test"}, force_rerun=True
@@ -508,7 +510,7 @@ def test_run_server_positive(mock_uvicorn_run):
     """Verify run_server calls uvicorn.run."""
     run_server(host="127.0.0.1", port=9000)
     mock_uvicorn_run.assert_called_once_with(
-        "deepeval_eval.api:app", host="127.0.0.1", port=9000, reload=False
+        "deepeval_eval.api.app:app", host="127.0.0.1", port=9000, reload=False
     )
 
 
@@ -531,7 +533,7 @@ def test_purge_expired_corrupted_and_unwriteable_files(tmp_path: Path):
 
 def test_get_job_results_additional_negative_cases():
     """Verify get_job_results for 404 not found and 500 failed jobs."""
-    from deepeval_eval.api import JobStatusEnum, job_manager
+    from deepeval_eval.api.app import JobStatusEnum, job_manager
 
     # Job not found
     res1 = client.get("/jobs/non_existent_9999/results")
@@ -549,10 +551,10 @@ def test_get_job_results_additional_negative_cases():
     assert "Custom error message" in res2.json()["detail"]
 
 
-@patch("deepeval_eval.api.PostgresResultSink")
+@patch("deepeval_eval.api.app.PostgresResultSink")
 def test_save_job_results_to_db_additional_negative_cases(mock_sink_cls):
     """Verify save_job_results_to_db for not found, empty results, and sink errors."""
-    from deepeval_eval.api import JobStatusEnum, cache_manager, job_manager
+    from deepeval_eval.api.app import JobStatusEnum, cache_manager, job_manager
 
     # 404 Job not found
     res1 = client.post("/jobs/non_existent_8888/save-db")
@@ -587,11 +589,11 @@ def test_save_job_results_to_db_additional_negative_cases(mock_sink_cls):
 
 def test_submit_eval_job_with_upload_cached_positive(tmp_path: Path):
     """Verify upload endpoint returns cached job response when hash matches."""
-    from deepeval_eval.api import cache_manager, job_manager
+    from deepeval_eval.api.app import cache_manager, job_manager
 
     with (
         patch("tempfile.mkdtemp", return_value=str(tmp_path)),
-        patch("deepeval_eval.api.execute_evaluation_job"),
+        patch("deepeval_eval.api.app.execute_evaluation_job"),
     ):
         file_content = b'[{"question": "What is CAIPE upload cache?"}]'
         files = {"file": ("cached_questions.json", file_content, "application/json")}
@@ -617,7 +619,7 @@ def test_submit_eval_job_with_upload_cached_positive(tmp_path: Path):
 
 def test_get_job_results_csv_positive():
     """Verify GET /jobs/{job_id}/results format=csv returns CSV content."""
-    from deepeval_eval.api import cache_manager, job_manager
+    from deepeval_eval.api.app import cache_manager, job_manager
 
     job = job_manager.create_job(
         "hash_csv_test", {"dataset_name": "enterprise"}, force_rerun=True
@@ -647,7 +649,7 @@ def test_get_job_results_csv_positive():
 
 def test_get_job_results_invalid_format():
     """Verify GET /jobs/{job_id}/results with unsupported format returns HTTP 400."""
-    from deepeval_eval.api import job_manager
+    from deepeval_eval.api.app import job_manager
 
     job = job_manager.create_job(
         "hash_invalid_format_test", {"dataset_name": "enterprise"}, force_rerun=True
@@ -711,7 +713,7 @@ def test_telemetry_endpoint_removed():
 
 def test_build_job_summary_positive():
     """Positive test for _build_job_summary with sample result metrics."""
-    from deepeval_eval.api import _build_job_summary
+    from deepeval_eval.api.app import _build_job_summary
 
     sample_results = [
         {
@@ -745,7 +747,7 @@ def test_build_job_summary_positive():
 
 def test_build_job_summary_negative():
     """Negative test for _build_job_summary with empty evaluation results."""
-    from deepeval_eval.api import _build_job_summary
+    from deepeval_eval.api.app import _build_job_summary
 
     summary = _build_job_summary([], eval_time=0.0)
 
@@ -760,7 +762,7 @@ def test_build_job_summary_negative():
 
 def test_get_job_results_streaming_multi_item():
     """Verify streaming response for multi-item job results delivers valid JSON."""
-    from deepeval_eval.api import JobStatusEnum, cache_manager, job_manager
+    from deepeval_eval.api.app import JobStatusEnum, cache_manager, job_manager
 
     job = job_manager.create_job(
         "hash_streaming_multi", {"dataset_name": "test_streaming"}, force_rerun=True
@@ -784,7 +786,7 @@ def test_get_job_results_streaming_multi_item():
 
 def test_get_job_results_streaming_none_results():
     """Verify streaming response when results payload is None/missing."""
-    from deepeval_eval.api import JobStatusEnum, job_manager
+    from deepeval_eval.api.app import JobStatusEnum, job_manager
 
     job = job_manager.create_job(
         "hash_streaming_none", {"dataset_name": "test_none"}, force_rerun=True
@@ -798,12 +800,12 @@ def test_get_job_results_streaming_none_results():
     assert data["results"] == []
 
 
-@patch("deepeval_eval.api.execute_evaluation_job")
+@patch("deepeval_eval.api.app.execute_evaluation_job")
 def test_run_queued_evaluation_cleans_up_temp_upload_dir(mock_execute):
     """Verify _run_queued_evaluation removes temporary upload directory on completion."""
     import tempfile
 
-    from deepeval_eval.api import _run_queued_evaluation
+    from deepeval_eval.api.app import _run_queued_evaluation
 
     temp_dir = tempfile.mkdtemp(prefix="eval_upload_")
     temp_file = Path(temp_dir) / "questions.json"
@@ -820,7 +822,7 @@ def test_run_queued_evaluation_cleans_up_temp_upload_dir(mock_execute):
 
 def test_submit_eval_job_sanitizes_credentials():
     """Verify sensitive API keys and tokens are stripped from job config_args to prevent leakage."""
-    from deepeval_eval.api import job_manager, sanitize_config_args
+    from deepeval_eval.api.app import job_manager, sanitize_config_args
 
     res = client.post(
         "/eval/jobs",

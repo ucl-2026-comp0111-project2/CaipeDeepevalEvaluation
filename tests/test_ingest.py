@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from deepeval_eval.ingest import (
+from deepeval_eval.ingest.ingest import (
     build_parser,
     main,
     run_enterprise_ingest,
@@ -51,8 +51,8 @@ def test_run_ingest_dispatch_positive(tmp_path: Path) -> None:
     args_hot = argparse.Namespace(dataset_name="hotpotqa", skip_ingest=True)
 
     with (
-        patch("deepeval_eval.ingest.run_enterprise_ingest") as mock_ent,
-        patch("deepeval_eval.ingest.run_hotpotqa_ingest") as mock_hot,
+        patch("deepeval_eval.ingest.ingest.run_enterprise_ingest") as mock_ent,
+        patch("deepeval_eval.ingest.ingest.run_hotpotqa_ingest") as mock_hot,
     ):
         run_ingest(args_ent)
         mock_ent.assert_called_once_with(args_ent)
@@ -85,15 +85,17 @@ def test_run_enterprise_ingest_skip_ingest(tmp_path: Path) -> None:
     mock_doc = MagicMock(doc_id="doc1")
 
     with (
-        patch("deepeval_eval.enterprise_dataset.load_questions", return_value=[mock_q]),
         patch(
-            "deepeval_eval.enterprise_dataset.select_questions", return_value=[mock_q]
+            "deepeval_eval.datasets.enterprise.load_questions", return_value=[mock_q]
         ),
         patch(
-            "deepeval_eval.enterprise_dataset.fetch_documents", return_value=[mock_doc]
+            "deepeval_eval.datasets.enterprise.select_questions", return_value=[mock_q]
         ),
-        patch("deepeval_eval.enterprise_dataset.write_corpus") as mock_write_corpus,
-        patch("deepeval_eval.enterprise_dataset.write_questions") as mock_write_q,
+        patch(
+            "deepeval_eval.datasets.enterprise.fetch_documents", return_value=[mock_doc]
+        ),
+        patch("deepeval_eval.datasets.enterprise.write_corpus") as mock_write_corpus,
+        patch("deepeval_eval.datasets.enterprise.write_questions") as mock_write_q,
     ):
         run_enterprise_ingest(args)
         mock_write_corpus.assert_called_once()
@@ -126,16 +128,18 @@ def test_run_enterprise_ingest_with_caipe_ingest_positive(tmp_path: Path) -> Non
     mock_client.open_job.return_value = "job_1"
 
     with (
-        patch("deepeval_eval.enterprise_dataset.load_questions", return_value=[mock_q]),
         patch(
-            "deepeval_eval.enterprise_dataset.select_questions", return_value=[mock_q]
+            "deepeval_eval.datasets.enterprise.load_questions", return_value=[mock_q]
         ),
         patch(
-            "deepeval_eval.enterprise_dataset.fetch_documents", return_value=[mock_doc]
+            "deepeval_eval.datasets.enterprise.select_questions", return_value=[mock_q]
         ),
-        patch("deepeval_eval.ingest.CaipeRagClient", return_value=mock_client),
-        patch("deepeval_eval.enterprise_dataset.write_corpus"),
-        patch("deepeval_eval.enterprise_dataset.write_questions"),
+        patch(
+            "deepeval_eval.datasets.enterprise.fetch_documents", return_value=[mock_doc]
+        ),
+        patch("deepeval_eval.ingest.ingest.CaipeRagClient", return_value=mock_client),
+        patch("deepeval_eval.datasets.enterprise.write_corpus"),
+        patch("deepeval_eval.datasets.enterprise.write_questions"),
     ):
         run_enterprise_ingest(args)
         mock_client.reset_datasource.assert_called_once_with("ds_123")
@@ -168,19 +172,22 @@ def test_run_hotpotqa_ingest_skip_ingest(tmp_path: Path) -> None:
 
     with (
         patch(
-            "deepeval_eval.hotpotqa_dataset.resolve_zip",
-            side_effect=lambda p, fb: tmp_path / fb,
+            "deepeval_eval.datasets.hotpotqa.resolve_zip",
+            return_value=tmp_path / "zip.zip",
         ),
-        patch("deepeval_eval.hotpotqa_dataset.load_questions", return_value=[mock_q]),
-        patch("deepeval_eval.hotpotqa_dataset.select_questions", return_value=[mock_q]),
+        patch("deepeval_eval.datasets.hotpotqa.load_questions", return_value=[mock_q]),
         patch(
-            "deepeval_eval.hotpotqa_dataset.load_document_pool", return_value=[mock_doc]
+            "deepeval_eval.datasets.hotpotqa.select_questions", return_value=[mock_q]
         ),
         patch(
-            "deepeval_eval.hotpotqa_dataset.select_documents", return_value=[mock_doc]
+            "deepeval_eval.datasets.hotpotqa.load_document_pool",
+            return_value=[mock_doc],
         ),
-        patch("deepeval_eval.hotpotqa_dataset.write_corpus") as mock_write_corpus,
-        patch("deepeval_eval.hotpotqa_dataset.write_questions") as mock_write_q,
+        patch(
+            "deepeval_eval.datasets.hotpotqa.select_documents", return_value=[mock_doc]
+        ),
+        patch("deepeval_eval.datasets.hotpotqa.write_corpus") as mock_write_corpus,
+        patch("deepeval_eval.datasets.hotpotqa.write_questions") as mock_write_q,
     ):
         run_hotpotqa_ingest(args)
         mock_write_corpus.assert_called_once()
@@ -217,20 +224,23 @@ def test_run_hotpotqa_ingest_with_caipe_ingest_positive(tmp_path: Path) -> None:
 
     with (
         patch(
-            "deepeval_eval.hotpotqa_dataset.resolve_zip",
-            side_effect=lambda p, fb: tmp_path / fb,
+            "deepeval_eval.datasets.hotpotqa.resolve_zip",
+            return_value=tmp_path / "zip.zip",
         ),
-        patch("deepeval_eval.hotpotqa_dataset.load_questions", return_value=[mock_q]),
-        patch("deepeval_eval.hotpotqa_dataset.select_questions", return_value=[mock_q]),
+        patch("deepeval_eval.datasets.hotpotqa.load_questions", return_value=[mock_q]),
         patch(
-            "deepeval_eval.hotpotqa_dataset.load_document_pool", return_value=[mock_doc]
+            "deepeval_eval.datasets.hotpotqa.select_questions", return_value=[mock_q]
         ),
         patch(
-            "deepeval_eval.hotpotqa_dataset.select_documents", return_value=[mock_doc]
+            "deepeval_eval.datasets.hotpotqa.load_document_pool",
+            return_value=[mock_doc],
         ),
-        patch("deepeval_eval.ingest.CaipeRagClient", return_value=mock_client),
-        patch("deepeval_eval.hotpotqa_dataset.write_corpus"),
-        patch("deepeval_eval.hotpotqa_dataset.write_questions"),
+        patch(
+            "deepeval_eval.datasets.hotpotqa.select_documents", return_value=[mock_doc]
+        ),
+        patch("deepeval_eval.ingest.ingest.CaipeRagClient", return_value=mock_client),
+        patch("deepeval_eval.datasets.hotpotqa.write_corpus"),
+        patch("deepeval_eval.datasets.hotpotqa.write_questions"),
     ):
         run_hotpotqa_ingest(args)
         mock_client.reset_datasource.assert_called_once_with("ds_hotpot")
@@ -247,8 +257,8 @@ def test_main_cli_execution_positive() -> None:
     """Verify main function parses arguments and triggers ingestion."""
     with (
         patch("sys.argv", ["ingest", "--skip-ingest"]),
-        patch("deepeval_eval.ingest.load_dotenv_loose") as mock_dotenv,
-        patch("deepeval_eval.ingest.run_ingest") as mock_run_ingest,
+        patch("deepeval_eval.ingest.ingest.load_dotenv_loose") as mock_dotenv,
+        patch("deepeval_eval.ingest.ingest.run_ingest") as mock_run_ingest,
     ):
         main()
         mock_dotenv.assert_called_once()

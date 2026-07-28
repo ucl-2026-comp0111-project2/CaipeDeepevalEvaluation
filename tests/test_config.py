@@ -4,7 +4,11 @@ from pathlib import Path
 
 import pytest
 
-from deepeval_eval.config import ensure_dirs, load_dotenv_loose, resolve_llm_settings
+from deepeval_eval.core.config import (
+    ensure_dirs,
+    load_dotenv_loose,
+    resolve_llm_settings,
+)
 
 
 def test_ensure_dirs_positive(tmp_path: Path) -> None:

@@ -54,7 +54,7 @@ class PostgresResultSink:
         connection_string: str | None = None,
         auto_init: bool = True,
     ):
-        from deepeval_eval.job_queue import DatabaseManager
+        from deepeval_eval.api.job_queue import DatabaseManager
 
         self.connection_string = connection_string
         self.db_manager = DatabaseManager(connection_string=connection_string)

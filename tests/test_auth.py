@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi import HTTPException
 
-from deepeval_eval.auth import (
+from deepeval_eval.api.auth import (
     AuthManager,
     OIDCProvider,
     RequirePermission,
@@ -77,8 +77,8 @@ def test_allow_unauthenticated_access_toggle():
 def test_allow_unauthenticated_access_monorepo_positive():
     """Verify allow_unauthenticated_access returns True when monorepo bypass is enabled."""
     with (
-        patch("deepeval_eval.auth.MONOREPO_AUTH_AVAILABLE", True),
-        patch("deepeval_eval.auth.caipe_rbac_bypass_enabled", return_value=True),
+        patch("deepeval_eval.api.auth.MONOREPO_AUTH_AVAILABLE", True),
+        patch("deepeval_eval.api.auth.caipe_rbac_bypass_enabled", return_value=True),
     ):
         assert allow_unauthenticated_access() is True
 
@@ -86,9 +86,9 @@ def test_allow_unauthenticated_access_monorepo_positive():
 def test_allow_unauthenticated_access_monorepo_exception_negative():
     """Verify allow_unauthenticated_access handles monorepo bypass exception gracefully."""
     with (
-        patch("deepeval_eval.auth.MONOREPO_AUTH_AVAILABLE", True),
+        patch("deepeval_eval.api.auth.MONOREPO_AUTH_AVAILABLE", True),
         patch(
-            "deepeval_eval.auth.caipe_rbac_bypass_enabled",
+            "deepeval_eval.api.auth.caipe_rbac_bypass_enabled",
             side_effect=RuntimeError("Bypass error"),
         ),
         patch.dict("os.environ", {"ALLOW_UNAUTHENTICATED_ACCESS": "false"}),
@@ -354,8 +354,8 @@ async def test_require_authenticated_user_monorepo_positive():
     mock_user = UserContext(subject="m1", email="m@test.com")
     mock_require_user = AsyncMock(return_value=mock_user)
     with (
-        patch("deepeval_eval.auth.MONOREPO_AUTH_AVAILABLE", True),
-        patch("deepeval_eval.auth.caipe_require_authenticated_user", mock_require_user),
+        patch("deepeval_eval.api.auth.MONOREPO_AUTH_AVAILABLE", True),
+        patch("deepeval_eval.api.auth.caipe_require_authenticated_user", mock_require_user),
     ):
         user = await require_authenticated_user(request)
         assert user.subject == "m1"
@@ -367,9 +367,9 @@ async def test_require_authenticated_user_monorepo_http_exception_fallback_posit
     request = MagicMock()
     request.headers = {}
     with (
-        patch("deepeval_eval.auth.MONOREPO_AUTH_AVAILABLE", True),
+        patch("deepeval_eval.api.auth.MONOREPO_AUTH_AVAILABLE", True),
         patch(
-            "deepeval_eval.auth.caipe_require_authenticated_user",
+            "deepeval_eval.api.auth.caipe_require_authenticated_user",
             side_effect=HTTPException(status_code=401),
         ),
         patch.dict("os.environ", {"ALLOW_UNAUTHENTICATED_ACCESS": "true"}),

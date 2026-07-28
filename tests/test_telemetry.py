@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from deepeval_eval.telemetry import TelemetryMetrics, setup_otlp_tracing
+from deepeval_eval.api.telemetry import TelemetryMetrics, setup_otlp_tracing
 
 
 def test_telemetry_metrics_initialization():
@@ -35,7 +35,7 @@ def test_setup_otlp_tracing():
 
 def test_trace_evaluation_span():
     """Verify trace_evaluation_span creates context manager without raising exceptions."""
-    from deepeval_eval.telemetry import trace_evaluation_span
+    from deepeval_eval.api.telemetry import trace_evaluation_span
 
     with trace_evaluation_span(
         "enterprise", {"answer_mode": "generate", "max_items": 5}

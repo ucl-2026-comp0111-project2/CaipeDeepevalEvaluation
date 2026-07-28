@@ -5,13 +5,13 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 
-from deepeval_eval.caipe_client import (
+from deepeval_eval.clients.caipe import (
     CaipeRagClient,
     build_caipe_client,
     check_response,
     extract_contexts_and_sources,
 )
-from deepeval_eval.prompt_style import PromptStyle
+from deepeval_eval.core.prompt_style import PromptStyle
 
 
 def test_check_response_positive() -> None:

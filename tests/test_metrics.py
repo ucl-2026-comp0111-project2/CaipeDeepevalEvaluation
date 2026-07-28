@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 from deepeval.models.base_model import DeepEvalBaseLLM
 from deepeval.test_case import LLMTestCase
 
-from deepeval_eval.metrics import (
+from deepeval_eval.engine.metrics import (
     AnswerCorrectnessMetric,
     ContainsReferenceMetric,
     MRRMetric,

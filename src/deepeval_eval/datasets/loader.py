@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
 
-from deepeval_eval.config import DEFAULT_DATA_DIR
+from deepeval_eval.core.config import DEFAULT_DATA_DIR
 
 
 def resolve_questions_file(

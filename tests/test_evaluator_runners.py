@@ -4,15 +4,15 @@ import argparse
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from deepeval_eval.deepeval_evaluator import (
+from deepeval_eval.clients.rag import RagQueryResult
+from deepeval_eval.engine.deepeval_evaluator import (
     _build_config_args,
     _build_rag_client,
     _run_eval,
 )
-from deepeval_eval.deepeval_evaluator import (
+from deepeval_eval.engine.deepeval_evaluator import (
     build_parser as build_evaluator_parser,
 )
-from deepeval_eval.rag_client import RagQueryResult
 
 
 def test_build_config_args_positive(tmp_path: Path) -> None:
@@ -53,7 +53,7 @@ def test_build_rag_client_positive(tmp_path: Path) -> None:
         results_dir=tmp_path,
         fail_on_error=False,
     )
-    with patch("deepeval_eval.agentic_rag.AgenticRetriever"):
+    with patch("deepeval_eval.engine.agentic_rag.AgenticRetriever"):
         client2 = _build_rag_client(args_agentic, env_values)
         assert client2.__class__.__name__ == "AgenticRagAdapter"
 
@@ -110,9 +110,9 @@ def test_run_eval_positive(tmp_path: Path, monkeypatch) -> None:
 
     with (
         patch(
-            "deepeval_eval.deepeval_evaluator._build_rag_client", return_value=mock_rag
+            "deepeval_eval.engine.deepeval_evaluator._build_rag_client", return_value=mock_rag
         ),
-        patch("deepeval_eval.deepeval_evaluator.build_metrics", return_value=[]),
+        patch("deepeval_eval.engine.deepeval_evaluator.build_metrics", return_value=[]),
     ):
         _run_eval(args)
 

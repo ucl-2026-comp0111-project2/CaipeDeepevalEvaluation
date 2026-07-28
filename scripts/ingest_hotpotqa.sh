@@ -9,7 +9,7 @@ REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 PYTHON_BIN=${PYTHON:-python3}
 
 exec "$PYTHON_BIN" \
-  "$REPO_ROOT/src/deepeval_eval/ingest.py" \
+  "$REPO_ROOT/src/deepeval_eval/ingest/ingest.py" \
   --dataset-name hotpotqa \
   --limit 100 \
   --questions-per-category 50 \

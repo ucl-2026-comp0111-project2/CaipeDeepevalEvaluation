@@ -7,7 +7,39 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from deepeval_eval.llm_client import make_generation_prompt, make_short_answer_prompt
+
+def make_generation_prompt(question: str, contexts: list[str]) -> str:
+    context_block = "\n\n".join(
+        f"[{idx + 1}] {text}" for idx, text in enumerate(contexts)
+    )
+    instruction = (
+        "Answer the question using only the context below. "
+        "If the context is not enough, say that the answer "
+        "is not in the provided context."
+    )
+    return (
+        f"{instruction}\n\n"
+        f"Question:\n{question}\n\n"
+        f"Context:\n{context_block}\n\n"
+        "Answer:"
+    )
+
+
+def make_short_answer_prompt(question: str, contexts: list[str]) -> str:
+    context_block = "\n\n".join(
+        f"[{idx + 1}] {text}" for idx, text in enumerate(contexts)
+    )
+    instruction = (
+        "Answer the HotpotQA question using only the context below. "
+        "Keep the answer short. If the context is not enough, say "
+        "that the answer is not in the provided context."
+    )
+    return (
+        f"{instruction}\n\n"
+        f"Question:\n{question}\n\n"
+        f"Context:\n{context_block}\n\n"
+        "Answer:"
+    )
 
 
 class PromptStyle(str, Enum):

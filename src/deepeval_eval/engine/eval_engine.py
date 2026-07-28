@@ -6,7 +6,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from deepeval_eval.config import (
+from deepeval_eval.api.telemetry import trace_evaluation_span
+from deepeval_eval.clients.llm import DeepEvalJudge, OpenAICompatibleClient
+from deepeval_eval.core.config import (
     DEFAULT_DATA_DIR,
     DEFAULT_ENV_FILE,
     DEFAULT_GATE_CONFIG,
@@ -15,18 +17,16 @@ from deepeval_eval.config import (
     load_dotenv_loose,
     resolve_llm_settings,
 )
-from deepeval_eval.data_loader import BaseDataLoader, FileDataLoader
-from deepeval_eval.io_utils import sanitize_path
-from deepeval_eval.llm_client import DeepEvalJudge, OpenAICompatibleClient
-from deepeval_eval.metrics import build_metrics, doc_id_scores
-from deepeval_eval.prompt_style import DEFAULT_PROMPT_STYLE
+from deepeval_eval.core.io_utils import sanitize_path
+from deepeval_eval.core.prompt_style import DEFAULT_PROMPT_STYLE
+from deepeval_eval.datasets.loader import BaseDataLoader, FileDataLoader
+from deepeval_eval.engine.metrics import build_metrics, doc_id_scores
 from deepeval_eval.sinks import (
     FileResultSink,
     PostgresResultSink,
     ResultSink,
     write_evaluation_results,
 )
-from deepeval_eval.telemetry import trace_evaluation_span
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +100,7 @@ class EvalConfig:
 
 def _build_rag_client(config: EvalConfig, env_values: dict[str, Any]) -> Any:
     """Factory function to build the appropriate RAG client for the evaluation run."""
-    from deepeval_eval.caipe_client import build_caipe_client
+    from deepeval_eval.clients.caipe import build_caipe_client
 
     supervisor_url = (
         getattr(config, "supervisor_url", None)
@@ -115,12 +115,12 @@ def _build_rag_client(config: EvalConfig, env_values: dict[str, Any]) -> Any:
         __import__("os").environ["CAIPE_DATASOURCE_ID"] = datasource_id
 
     if getattr(config, "oracle_retrieval", False):
-        from deepeval_eval.oracle_client import OracleRagClient
+        from deepeval_eval.clients.oracle import OracleRagClient
 
         caipe_client = build_caipe_client(env_values)
         return OracleRagClient(caipe_client)
     elif getattr(config, "agentic", False):
-        from deepeval_eval.rag_client import AgenticRagAdapter
+        from deepeval_eval.clients.rag import AgenticRagAdapter
 
         return AgenticRagAdapter(
             supervisor_url=supervisor_url,
@@ -151,7 +151,7 @@ def run_evaluation(
     with span:
         ensure_dirs(config.results_dir)
         if config.prompt_config:
-            from deepeval_eval.prompt_style import load_prompt_styles_from_config
+            from deepeval_eval.core.prompt_style import load_prompt_styles_from_config
 
             load_prompt_styles_from_config(config.prompt_config)
         env_values = load_dotenv_loose(config.env_file)
@@ -352,7 +352,7 @@ def run_evaluation(
     )
 
     if config.gate:
-        from deepeval_eval.gate import run_gate_on_results
+        from deepeval_eval.engine.gate import run_gate_on_results
 
         passed = run_gate_on_results(results, config.gate_config, config.results_dir)
         if not passed:

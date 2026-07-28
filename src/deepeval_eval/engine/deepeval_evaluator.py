@@ -9,7 +9,7 @@ from typing import Any
 if __package__ in (None, ""):
     sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-from deepeval_eval.config import (
+from deepeval_eval.core.config import (
     DEFAULT_CACHE_DIR,
     DEFAULT_DATA_DIR,
     DEFAULT_ENV_FILE,
@@ -17,13 +17,13 @@ from deepeval_eval.config import (
     DEFAULT_RESULTS_DIR,
     load_dotenv_loose,
 )
-from deepeval_eval.eval_engine import (
+from deepeval_eval.engine.eval_engine import (
     EvalConfig,
     QualityGateError,
     _build_rag_client,
     run_evaluation,
 )
-from deepeval_eval.metrics import build_metrics as build_metrics
+from deepeval_eval.engine.metrics import build_metrics as build_metrics
 from deepeval_eval.sinks import write_evaluation_results
 
 

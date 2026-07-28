@@ -6,7 +6,7 @@ import httpx
 import pytest
 from pydantic import BaseModel
 
-from deepeval_eval.llm_client import (
+from deepeval_eval.clients.llm import (
     DeepEvalJudge,
     OpenAICompatibleClient,
     is_transient_error,

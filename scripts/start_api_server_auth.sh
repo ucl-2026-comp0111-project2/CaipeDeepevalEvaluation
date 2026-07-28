@@ -49,4 +49,4 @@ else
 fi
 
 # Run the protected API server via uv
-uv run python3 -c "from deepeval_eval.api import run_server; run_server(host='${HOST}', port=${PORT})"
+uv run python3 -c "from deepeval_eval.api.app import run_server; run_server(host='${HOST}', port=${PORT})"

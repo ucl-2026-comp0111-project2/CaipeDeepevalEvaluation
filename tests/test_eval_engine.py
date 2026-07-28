@@ -1,8 +1,8 @@
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from deepeval_eval.data_loader import InMemoryDataLoader
-from deepeval_eval.eval_engine import EvalConfig, run_evaluation
+from deepeval_eval.datasets.loader import InMemoryDataLoader
+from deepeval_eval.engine.eval_engine import EvalConfig, run_evaluation
 
 
 def test_eval_config_defaults():

@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from deepeval_eval.rag_client import AgenticRagAdapter, RagQueryResult
+from deepeval_eval.clients.rag import AgenticRagAdapter, RagQueryResult
 
 
 def test_rag_query_result_dataclass_positive() -> None:
@@ -49,7 +49,7 @@ def test_agentic_rag_adapter_positive(tmp_path: Path) -> None:
     mock_retriever.documents_metadata = [{"doc_id": "doc_meta_1"}]
 
     with patch(
-        "deepeval_eval.agentic_rag.AgenticRetriever", return_value=mock_retriever
+        "deepeval_eval.engine.agentic_rag.AgenticRetriever", return_value=mock_retriever
     ):
         adapter = AgenticRagAdapter(
             supervisor_url="http://localhost:8000", results_dir=tmp_path
@@ -79,7 +79,7 @@ def test_agentic_rag_adapter_negative(tmp_path: Path) -> None:
     mock_retriever.documents_metadata = []
 
     with patch(
-        "deepeval_eval.agentic_rag.AgenticRetriever", return_value=mock_retriever
+        "deepeval_eval.engine.agentic_rag.AgenticRetriever", return_value=mock_retriever
     ):
         adapter = AgenticRagAdapter(
             supervisor_url="http://localhost:8000", results_dir=tmp_path
@@ -106,7 +106,7 @@ def test_agentic_rag_adapter_datasource_id_forwarding(tmp_path: Path) -> None:
     mock_retriever.documents_metadata = []
 
     with patch(
-        "deepeval_eval.agentic_rag.AgenticRetriever", return_value=mock_retriever
+        "deepeval_eval.engine.agentic_rag.AgenticRetriever", return_value=mock_retriever
     ) as mock_init:
         adapter = AgenticRagAdapter(
             supervisor_url="http://localhost:8000",
@@ -137,7 +137,7 @@ def test_agentic_rag_adapter_datasource_id_forwarding(tmp_path: Path) -> None:
 def test_agentic_rag_adapter_agent_id_forwarding(tmp_path: Path) -> None:
     mock_retriever = MagicMock()
     with patch(
-        "deepeval_eval.agentic_rag.AgenticRetriever", return_value=mock_retriever
+        "deepeval_eval.engine.agentic_rag.AgenticRetriever", return_value=mock_retriever
     ) as mock_init:
         adapter = AgenticRagAdapter(
             supervisor_url="http://localhost:8000",

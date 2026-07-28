@@ -25,7 +25,7 @@ export CAIPE_OIDC_TOKEN=$(curl -sk -X POST "https://keycloak.caipe.homelab/realm
   -d "grant_type=client_credentials" | jq -r '.access_token')
 
 # Run deepeval evaluation using uv run with the same dataset and settings as Ragas
-uv run python3 src/deepeval_eval/deepeval_evaluator.py \
+uv run python3 src/deepeval_eval/engine/deepeval_evaluator.py \
   eval \
   --dataset-name hotpotqa \
   --datasource-id "${CAIPE_DATASOURCE_ID}" \

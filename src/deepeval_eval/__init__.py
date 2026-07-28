@@ -1,9 +1,10 @@
-from deepeval_eval.prompt_style import (
+"""DeepEval evaluation framework package."""
+
+from deepeval_eval.core.prompt_style import (
     DEFAULT_PROMPT_STYLE,
     PromptStyle,
     build_prompt,
     load_prompt_styles_from_config,
-    register_prompt_style,
 )
 
 __all__ = [
@@ -11,5 +12,4 @@ __all__ = [
     "PromptStyle",
     "build_prompt",
     "load_prompt_styles_from_config",
-    "register_prompt_style",
 ]

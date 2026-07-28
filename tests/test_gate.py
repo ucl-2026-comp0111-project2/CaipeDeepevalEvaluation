@@ -1,4 +1,8 @@
-from deepeval_eval.gate import evaluate_gate, render_markdown, resolve_metric_class_name
+from deepeval_eval.engine.gate import (
+    evaluate_gate,
+    render_markdown,
+    resolve_metric_class_name,
+)
 
 
 def _metric(score, success=None):
@@ -96,7 +100,7 @@ def test_load_thresholds_json_and_validation(tmp_path):
 
     import pytest
 
-    from deepeval_eval.gate import load_thresholds
+    from deepeval_eval.engine.gate import load_thresholds
 
     json_file = tmp_path / "thresholds.json"
     json_file.write_text(json.dumps({"error_tolerance": 0.05}), encoding="utf-8")
@@ -112,7 +116,7 @@ def test_load_thresholds_json_and_validation(tmp_path):
 def test_run_gate_on_results_and_main(tmp_path, monkeypatch):
     import json
 
-    from deepeval_eval.gate import main, run_gate_on_results
+    from deepeval_eval.engine.gate import main, run_gate_on_results
 
     config_path = tmp_path / "config.yaml"
     config_path.write_text("error_tolerance: 0.1\n", encoding="utf-8")

@@ -10,7 +10,7 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
-from deepeval_eval.config import get_max_concurrent_jobs
+from deepeval_eval.core.config import get_max_concurrent_jobs
 
 logger = logging.getLogger(__name__)
 

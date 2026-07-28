@@ -57,7 +57,7 @@ class AgenticRagAdapter(BaseRagClient):
         agent_id: str | None = None,
     ) -> None:
         agentic_rag_module = __import__(
-            "deepeval_eval.agentic_rag", fromlist=["AgenticRetriever"]
+            "deepeval_eval.engine.agentic_rag", fromlist=["AgenticRetriever"]
         )
         logdir = str(results_dir / "logs") if results_dir else "./logs"
         self.datasource_id = datasource_id

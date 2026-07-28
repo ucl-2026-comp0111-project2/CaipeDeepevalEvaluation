@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from deepeval_eval.io_utils import (
+from deepeval_eval.core.io_utils import (
     download_bytes,
     download_text,
     load_eval_questions,

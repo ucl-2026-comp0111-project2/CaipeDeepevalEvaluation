@@ -9,10 +9,10 @@ from __future__ import annotations
 
 import time
 
-from deepeval_eval.caipe_client import CaipeRagClient, extract_contexts_and_sources
-from deepeval_eval.llm_client import OpenAICompatibleClient
-from deepeval_eval.prompt_style import PromptStyle, build_prompt
-from deepeval_eval.rag_client import BaseRagClient, RagQueryResult
+from deepeval_eval.clients.caipe import CaipeRagClient, extract_contexts_and_sources
+from deepeval_eval.clients.llm import OpenAICompatibleClient
+from deepeval_eval.clients.rag import BaseRagClient, RagQueryResult
+from deepeval_eval.core.prompt_style import PromptStyle, build_prompt
 
 
 class OracleRagClient(BaseRagClient):

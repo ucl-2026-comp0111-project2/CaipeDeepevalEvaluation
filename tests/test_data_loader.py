@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from deepeval_eval.data_loader import (
+from deepeval_eval.datasets.loader import (
     DatabaseDataLoader,
     FileDataLoader,
     InMemoryDataLoader,

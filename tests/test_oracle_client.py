@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from deepeval_eval.oracle_client import OracleRagClient
+from deepeval_eval.clients.oracle import OracleRagClient
 
 
 def test_oracle_rag_client_ground_truth_mode_positive() -> None:

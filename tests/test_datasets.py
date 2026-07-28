@@ -6,45 +6,45 @@ from pathlib import Path
 
 import pytest
 
-from deepeval_eval.enterprise_dataset import (
+from deepeval_eval.datasets.enterprise import (
     EnterpriseDoc,
     EvalQuestion,
     parse_doc_filename,
 )
-from deepeval_eval.enterprise_dataset import (
+from deepeval_eval.datasets.enterprise import (
     load_questions as load_enterprise_questions,
 )
-from deepeval_eval.enterprise_dataset import (
+from deepeval_eval.datasets.enterprise import (
     select_questions as select_enterprise_questions,
 )
-from deepeval_eval.enterprise_dataset import (
+from deepeval_eval.datasets.enterprise import (
     to_caipe_payload as enterprise_to_caipe_payload,
 )
-from deepeval_eval.enterprise_dataset import (
+from deepeval_eval.datasets.enterprise import (
     write_corpus as write_enterprise_corpus,
 )
-from deepeval_eval.enterprise_dataset import (
+from deepeval_eval.datasets.enterprise import (
     write_questions as write_enterprise_questions,
 )
-from deepeval_eval.hotpotqa_dataset import (
+from deepeval_eval.datasets.hotpotqa import (
     load_document_pool,
     read_jsonl_zip,
     resolve_zip,
     unique,
 )
-from deepeval_eval.hotpotqa_dataset import (
+from deepeval_eval.datasets.hotpotqa import (
     load_questions as load_hotpotqa_questions,
 )
-from deepeval_eval.hotpotqa_dataset import (
+from deepeval_eval.datasets.hotpotqa import (
     select_documents as select_hotpotqa_documents,
 )
-from deepeval_eval.hotpotqa_dataset import (
+from deepeval_eval.datasets.hotpotqa import (
     select_questions as select_hotpotqa_questions,
 )
-from deepeval_eval.hotpotqa_dataset import (
+from deepeval_eval.datasets.hotpotqa import (
     to_caipe_payload as hotpotqa_to_caipe_payload,
 )
-from deepeval_eval.hotpotqa_dataset import (
+from deepeval_eval.datasets.hotpotqa import (
     write_questions as write_hotpotqa_questions,
 )
 
@@ -69,7 +69,7 @@ def test_enterprise_questions_positive(
         '{"question_id": "q2", "question": "Where is Z?", "gold_answer": "Z is here", "question_type": "cat2", "source_types": ["jira"], "expected_doc_ids": ["doc2"]}\n'
     )
     monkeypatch.setattr(
-        "deepeval_eval.enterprise_dataset.download_text",
+        "deepeval_eval.datasets.enterprise.download_text",
         lambda url, dest: questions_jsonl,
     )
 
@@ -95,7 +95,7 @@ def test_enterprise_to_caipe_payload() -> None:
 
 
 def test_fetch_documents(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from deepeval_eval.enterprise_dataset import fetch_documents
+    from deepeval_eval.datasets.enterprise import fetch_documents
 
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
@@ -105,11 +105,11 @@ def test_fetch_documents(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
         )
 
     monkeypatch.setattr(
-        "deepeval_eval.enterprise_dataset.download_bytes",
+        "deepeval_eval.datasets.enterprise.download_bytes",
         lambda url, dest: buf.getvalue(),
     )
     monkeypatch.setattr(
-        "deepeval_eval.enterprise_dataset.SOURCE_SLICE_COUNTS", {"slack": 1}
+        "deepeval_eval.datasets.enterprise.SOURCE_SLICE_COUNTS", {"slack": 1}
     )
 
     docs = fetch_documents(
@@ -203,7 +203,7 @@ def test_hotpotqa_dataset_helpers(tmp_path: Path) -> None:
 
 
 def test_hotpotqa_fallbacks() -> None:
-    from deepeval_eval.hotpotqa_dataset import select_documents, select_questions
+    from deepeval_eval.datasets.hotpotqa import select_documents, select_questions
 
     questions = [
         {"question_id": "q1", "category": "cat1", "expected_doc_ids": ["d1"]},
@@ -228,7 +228,7 @@ def test_hotpotqa_resolve_zip_negative(
 ) -> None:
     non_existent = tmp_path / "non_existent.zip"
     monkeypatch.setattr(
-        "deepeval_eval.hotpotqa_dataset.DEFAULT_DOWNLOADS_DIR", tmp_path / "downloads"
+        "deepeval_eval.datasets.hotpotqa.DEFAULT_DOWNLOADS_DIR", tmp_path / "downloads"
     )
     with pytest.raises(FileNotFoundError):
         resolve_zip(non_existent, "fallback.zip")

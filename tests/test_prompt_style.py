@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from deepeval_eval.prompt_style import (
+from deepeval_eval.core.prompt_style import (
     DEFAULT_PROMPT_STYLE,
     PromptStyle,
     build_prompt,

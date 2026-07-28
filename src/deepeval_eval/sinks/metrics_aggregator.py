@@ -30,7 +30,7 @@ def compute_metric_averages(
 
 def compute_all_metric_averages(results: list[dict[str, Any]]) -> dict[str, float]:
     """Compute average scores for all evaluator and retrieval metrics."""
-    from deepeval_eval.metrics import get_metric_column_name
+    from deepeval_eval.engine.metrics import get_metric_column_name
 
     discovered = discover_all_metrics(results)
     evaluator_averages = compute_metric_averages(results, discovered)

@@ -33,7 +33,7 @@ from typing import Any
 import httpx
 import requests
 
-from deepeval_eval.io_utils import sanitize_path
+from deepeval_eval.core.io_utils import sanitize_path
 
 logger = logging.getLogger(__name__)
 

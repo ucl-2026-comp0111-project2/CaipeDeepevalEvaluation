@@ -6,11 +6,11 @@ from typing import Any
 
 import requests
 
-from deepeval_eval.prompt_style import PromptStyle, build_prompt
-from deepeval_eval.rag_client import (
+from deepeval_eval.clients.rag import (
     BaseRagClient,
     RagQueryResult,
-)  # Re-exported for backward compatibility
+)
+from deepeval_eval.core.prompt_style import PromptStyle, build_prompt
 
 logger = logging.getLogger(__name__)
 

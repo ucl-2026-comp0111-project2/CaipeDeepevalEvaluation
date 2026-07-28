@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from deepeval_eval.metrics import get_metric_column_name
+from deepeval_eval.engine.metrics import get_metric_column_name
 from deepeval_eval.sinks.metrics_aggregator import (
     calculate_latency_percentiles,
     categorize_failure_causes,

@@ -9,8 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from deepeval_eval.config import ensure_dirs
-from deepeval_eval.io_utils import download_bytes, download_text
+from deepeval_eval.core.config import ensure_dirs
+from deepeval_eval.core.io_utils import download_bytes, download_text
 
 RELEASE_BASE_URL = (
     "https://github.com/onyx-dot-app/EnterpriseRAG-Bench/releases/download/v1.0.0"

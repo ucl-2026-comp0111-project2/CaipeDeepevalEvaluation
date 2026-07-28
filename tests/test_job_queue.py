@@ -5,8 +5,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from deepeval_eval.config import get_max_concurrent_jobs
-from deepeval_eval.job_queue import DatabaseManager, PersistentJobQueue
+from deepeval_eval.api.job_queue import DatabaseManager, PersistentJobQueue
+from deepeval_eval.core.config import get_max_concurrent_jobs
 
 
 @pytest.fixture

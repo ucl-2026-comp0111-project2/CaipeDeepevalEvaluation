@@ -14,6 +14,11 @@ from tenacity import (
     wait_exponential,
 )
 
+from deepeval_eval.core.prompt_style import (
+    make_generation_prompt,
+    make_short_answer_prompt,
+)
+
 
 def is_transient_error(exception: Exception) -> bool:
     """Helper to determine if an HTTP error is transient and worth retrying,
@@ -173,35 +178,10 @@ def parse_schema_response(text: str, schema: type[BaseModel]) -> BaseModel:
         return schema.model_validate_json(match.group(1))
 
 
-def make_generation_prompt(question: str, contexts: list[str]) -> str:
-    context_block = "\n\n".join(
-        f"[{idx + 1}] {text}" for idx, text in enumerate(contexts)
-    )
-    instruction = (
-        "Answer the question using only the context below. "
-        "If the context is not enough, say that the answer "
-        "is not in the provided context."
-    )
-    return (
-        f"{instruction}\n\n"
-        f"Question:\n{question}\n\n"
-        f"Context:\n{context_block}\n\n"
-        "Answer:"
-    )
-
-
-def make_short_answer_prompt(question: str, contexts: list[str]) -> str:
-    context_block = "\n\n".join(
-        f"[{idx + 1}] {text}" for idx, text in enumerate(contexts)
-    )
-    instruction = (
-        "Answer the HotpotQA question using only the context below. "
-        "Keep the answer short. If the context is not enough, say "
-        "that the answer is not in the provided context."
-    )
-    return (
-        f"{instruction}\n\n"
-        f"Question:\n{question}\n\n"
-        f"Context:\n{context_block}\n\n"
-        "Answer:"
-    )
+__all__ = [
+    "DeepEvalJudge",
+    "OpenAICompatibleClient",
+    "is_transient_error",
+    "make_generation_prompt",
+    "make_short_answer_prompt",
+]

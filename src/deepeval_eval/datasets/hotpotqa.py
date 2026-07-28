@@ -6,7 +6,7 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
-from deepeval_eval.config import DEFAULT_DOWNLOADS_DIR
+from deepeval_eval.core.config import DEFAULT_DOWNLOADS_DIR
 
 INGESTOR_TYPE = "hotpotqa_deepeval"
 INGESTOR_NAME = "hotpotqa-deepeval"

@@ -7,8 +7,8 @@ from pathlib import Path
 if __package__ in (None, ""):
     sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-from deepeval_eval.caipe_client import CaipeRagClient
-from deepeval_eval.config import (
+from deepeval_eval.clients.caipe import CaipeRagClient
+from deepeval_eval.core.config import (
     DEFAULT_CACHE_DIR,
     DEFAULT_DATA_DIR,
     DEFAULT_ENV_FILE,
@@ -20,7 +20,7 @@ from deepeval_eval.config import (
 
 def run_enterprise_ingest(args: argparse.Namespace) -> None:
     """Ingest EnterpriseRAG-Bench documents and questions into CAIPE datasource."""
-    from deepeval_eval.enterprise_dataset import (
+    from deepeval_eval.datasets.enterprise import (
         INGESTOR_NAME,
         INGESTOR_TYPE,
         fetch_documents,
@@ -114,7 +114,7 @@ def run_enterprise_ingest(args: argparse.Namespace) -> None:
 
 def run_hotpotqa_ingest(args: argparse.Namespace) -> None:
     """Ingest HotpotQA documents and questions into CAIPE datasource."""
-    from deepeval_eval.hotpotqa_dataset import (
+    from deepeval_eval.datasets.hotpotqa import (
         INGESTOR_NAME,
         INGESTOR_TYPE,
         load_document_pool,
