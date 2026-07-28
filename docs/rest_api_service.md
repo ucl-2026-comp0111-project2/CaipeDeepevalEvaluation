@@ -10,7 +10,7 @@ The service is implemented in [`src/deepeval_eval/api.py`](file:///Users/alexang
 
 ### 1. Repository / Sink Pattern (Data Abstraction)
 - **Concept**: Decouples evaluation business logic from persistent storage mechanisms.
-- **Implementation**: Uses `ResultSink` Protocol with `FileResultSink` (local 24-hour JSON/CSV artifact generation) and `DatabaseResultSink` (direct PostgreSQL persistence).
+- **Implementation**: Uses `ResultSink` Protocol with `FileResultSink` (local 24-hour JSON/CSV artifact generation) and `PostgresResultSink` (direct PostgreSQL persistence).
 - **Benefit**: Endpoints querying evaluation outputs operate on uniform result objects regardless of storage backend.
 
 ### 2. Job Queue & State Machine Pattern (Asynchronous Operations)

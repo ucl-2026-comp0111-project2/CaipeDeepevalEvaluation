@@ -153,4 +153,3 @@ def test_agentic_rag_adapter_agent_id_forwarding(tmp_path: Path) -> None:
             agent_id="custom-agent-v2",
         )
         assert adapter.agent_id == "custom-agent-v2"
-

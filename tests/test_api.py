@@ -419,7 +419,7 @@ def test_get_job_summary_negative_pending_and_failed():
     assert "Evaluation engine error" in res_failed.json()["detail"]
 
 
-@patch("deepeval_eval.api.DatabaseResultSink")
+@patch("deepeval_eval.api.PostgresResultSink")
 def test_save_job_results_to_db_positive(mock_sink_cls):
     """Verify POST /jobs/{job_id}/save-db calls PostgresResultSink.save."""
     from deepeval_eval.api import JobStatusEnum, cache_manager, job_manager
@@ -452,7 +452,7 @@ def test_save_job_results_to_db_negative_not_completed():
 
 
 def test_query_db_evaluation_runs_positive():
-    """Verify GET /results/db queries PostgreSQL database via DatabaseResultSink."""
+    """Verify GET /results/db queries PostgreSQL database via PostgresResultSink."""
     mock_psycopg2 = MagicMock()
     mock_extras = MagicMock()
     mock_conn = MagicMock()
@@ -470,8 +470,13 @@ def test_query_db_evaluation_runs_positive():
         }
     ]
 
-    with patch.dict(
-        "sys.modules", {"psycopg2": mock_psycopg2, "psycopg2.extras": mock_extras}
+    with (
+        patch.dict(
+            "os.environ", {"DATABASE_URL": "postgresql://user:pass@localhost/db"}
+        ),
+        patch.dict(
+            "sys.modules", {"psycopg2": mock_psycopg2, "psycopg2.extras": mock_extras}
+        ),
     ):
         res = client.get("/results/db?limit=5")
         assert res.status_code == 200
@@ -485,8 +490,13 @@ def test_query_db_evaluation_runs_negative():
     mock_psycopg2 = MagicMock()
     mock_psycopg2.connect.side_effect = Exception("DB Connection Error")
 
-    with patch.dict(
-        "sys.modules", {"psycopg2": mock_psycopg2, "psycopg2.extras": MagicMock()}
+    with (
+        patch.dict(
+            "os.environ", {"DATABASE_URL": "postgresql://user:pass@localhost/db"}
+        ),
+        patch.dict(
+            "sys.modules", {"psycopg2": mock_psycopg2, "psycopg2.extras": MagicMock()}
+        ),
     ):
         res = client.get("/results/db")
         assert res.status_code == 500
@@ -539,7 +549,7 @@ def test_get_job_results_additional_negative_cases():
     assert "Custom error message" in res2.json()["detail"]
 
 
-@patch("deepeval_eval.api.DatabaseResultSink")
+@patch("deepeval_eval.api.PostgresResultSink")
 def test_save_job_results_to_db_additional_negative_cases(mock_sink_cls):
     """Verify save_job_results_to_db for not found, empty results, and sink errors."""
     from deepeval_eval.api import JobStatusEnum, cache_manager, job_manager
@@ -786,3 +796,58 @@ def test_get_job_results_streaming_none_results():
     data = res.json()
     assert data["job_id"] == job["job_id"]
     assert data["results"] == []
+
+
+@patch("deepeval_eval.api.execute_evaluation_job")
+def test_run_queued_evaluation_cleans_up_temp_upload_dir(mock_execute):
+    """Verify _run_queued_evaluation removes temporary upload directory on completion."""
+    import tempfile
+
+    from deepeval_eval.api import _run_queued_evaluation
+
+    temp_dir = tempfile.mkdtemp(prefix="eval_upload_")
+    temp_file = Path(temp_dir) / "questions.json"
+    temp_file.write_text('[{"question": "test"}]')
+
+    config_dict = {
+        "dataset_name": "temp_test",
+        "questions_file": str(temp_file),
+    }
+
+    _run_queued_evaluation("job-temp-clean", config_dict)
+    assert not Path(temp_dir).exists()
+
+
+def test_submit_eval_job_sanitizes_credentials():
+    """Verify sensitive API keys and tokens are stripped from job config_args to prevent leakage."""
+    from deepeval_eval.api import job_manager, sanitize_config_args
+
+    res = client.post(
+        "/eval/jobs",
+        json={
+            "dataset_name": "sanitization_test",
+            "llm_api_key": "sk-secret-key-999",
+            "auth_token": "bearer-token-111",
+            "force_rerun": True,
+        },
+    )
+    assert res.status_code == 202
+    job_id = res.json()["job_id"]
+
+    job = job_manager.get_job(job_id)
+    assert job is not None
+    config_args = job["config_args"]
+    assert "llm_api_key" not in config_args
+    assert "auth_token" not in config_args
+
+    sanitized = sanitize_config_args(
+        {
+            "dataset_name": "test",
+            "llm_api_key": "secret",
+            "auth_token": "token",
+            "questions_file": "/sensitive/path/to/questions.json",
+        }
+    )
+    assert "llm_api_key" not in sanitized
+    assert "auth_token" not in sanitized
+    assert sanitized["questions_file"] == "questions.json"

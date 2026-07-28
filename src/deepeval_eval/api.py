@@ -10,12 +10,12 @@ import threading
 import time
 import uuid
 from collections.abc import Iterator
+from contextlib import asynccontextmanager
 from enum import Enum
 from pathlib import Path
 from typing import Any
 
 from fastapi import (
-    BackgroundTasks,
     Depends,
     FastAPI,
     File,
@@ -41,8 +41,9 @@ from deepeval_eval.config import (
 )
 from deepeval_eval.eval_engine import EvalConfig, _build_rag_client, run_evaluation
 from deepeval_eval.io_utils import sanitize_path
+from deepeval_eval.job_queue import DatabaseManager, PersistentJobQueue
 from deepeval_eval.prompt_style import DEFAULT_PROMPT_STYLE
-from deepeval_eval.sinks import DatabaseResultSink
+from deepeval_eval.sinks import PostgresResultSink
 from deepeval_eval.sinks.file_sink import format_results_as_csv
 from deepeval_eval.telemetry import (
     setup_otlp_tracing,
@@ -474,7 +475,33 @@ class JobManager:
         with self._lock:
             job = self.jobs.get(job_id)
             if job:
+                db_job = persistent_job_queue.get_job(job_id)
+                if db_job:
+                    job["status"] = db_job["status"]
+                    if db_job.get("started_at"):
+                        job["started_at"] = db_job["started_at"]
+                    if db_job.get("completed_at"):
+                        job["completed_at"] = db_job["completed_at"]
+                    if db_job.get("error"):
+                        job["error"] = db_job["error"]
                 return dict(job)
+        db_job = persistent_job_queue.get_job(job_id)
+        if db_job:
+            return {
+                "job_id": job_id,
+                "status": db_job["status"],
+                "created_at": db_job.get("created_at", time.time()),
+                "completed_at": db_job.get("completed_at"),
+                "cached": False,
+                "eval_hash": db_job.get("eval_hash", ""),
+                "evaluation_time": 0.0,
+                "config_args": db_job.get("config_args", {}),
+                "summary": {},
+                "results": [],
+                "saved_to_db": False,
+                "user_info": None,
+                "error": db_job.get("error"),
+            }
         cached_job = self.cache_manager.get_by_job_id(job_id)
         if cached_job:
             return {
@@ -496,12 +523,33 @@ class JobManager:
 
     def list_jobs(self) -> list[dict[str, Any]]:
         with self._lock:
-            return [
-                dict(j)
-                for j in sorted(
-                    self.jobs.values(), key=lambda j: j["created_at"], reverse=True
-                )
-            ]
+            local_jobs = {j["job_id"]: dict(j) for j in self.jobs.values()}
+        db_jobs = persistent_job_queue.list_jobs()
+        for dj in db_jobs:
+            jid = dj["job_id"]
+            if jid in local_jobs:
+                local_jobs[jid]["status"] = dj["status"]
+                if dj.get("completed_at"):
+                    local_jobs[jid]["completed_at"] = dj["completed_at"]
+                if dj.get("error"):
+                    local_jobs[jid]["error"] = dj["error"]
+            else:
+                local_jobs[jid] = {
+                    "job_id": jid,
+                    "status": dj["status"],
+                    "created_at": dj.get("created_at", time.time()),
+                    "completed_at": dj.get("completed_at"),
+                    "cached": False,
+                    "eval_hash": dj.get("eval_hash", ""),
+                    "evaluation_time": 0.0,
+                    "config_args": dj.get("config_args", {}),
+                    "summary": {},
+                    "results": [],
+                    "saved_to_db": False,
+                    "user_info": None,
+                    "error": dj.get("error"),
+                }
+        return sorted(local_jobs.values(), key=lambda j: j["created_at"], reverse=True)
 
     def get_job_results_payload(self, job_id: str) -> list[dict[str, Any]]:
         with self._lock:
@@ -511,9 +559,11 @@ class JobManager:
         return self.cache_manager.get_job_payload(job_id)
 
 
-# Initialize global cache and job manager
+# Initialize global cache, DB manager, job manager and persistent queue
 cache_manager = LocalCacheManager()
 job_manager = JobManager(cache_manager)
+db_manager = DatabaseManager()
+persistent_job_queue = PersistentJobQueue(db_manager)
 
 # ---------------------------------------------------------------------------
 # Background Task Execution
@@ -630,7 +680,7 @@ def execute_evaluation_job(
 
         if eval_config.save_to_db and results:
             try:
-                sink = DatabaseResultSink()
+                sink = PostgresResultSink()
                 sink.save(
                     results_dir=Path(DEFAULT_RESULTS_DIR),
                     prefix=eval_config.dataset_name or "enterprise",
@@ -678,6 +728,45 @@ def execute_evaluation_job(
                 )
 
 
+def _run_queued_evaluation(job_id: str, config_dict: dict[str, Any]) -> None:
+    temp_file_str = config_dict.get("questions_file")
+    temp_file_path = Path(temp_file_str) if temp_file_str else None
+    req = EvaluationRequest(
+        **{k: v for k, v in config_dict.items() if k in EvaluationRequest.model_fields}
+    )
+    try:
+        execute_evaluation_job(job_id, req, temp_file_path=temp_file_path)
+    finally:
+        if temp_file_path and temp_file_path.exists():
+            try:
+                parent_dir = temp_file_path.parent
+                system_temp = Path(tempfile.gettempdir())
+                if (
+                    parent_dir.exists()
+                    and (system_temp in parent_dir.parents or parent_dir == system_temp)
+                    and parent_dir.name.startswith("eval_upload_")
+                ):
+                    shutil.rmtree(parent_dir, ignore_errors=True)
+                elif temp_file_path.is_file():
+                    temp_file_path.unlink(missing_ok=True)
+            except Exception as cleanup_err:
+                logger.warning(
+                    f"Failed to clean up temporary upload directory in queued task: {cleanup_err}"
+                )
+
+
+persistent_job_queue.set_task_executor(_run_queued_evaluation)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    persistent_job_queue.start()
+    try:
+        yield
+    finally:
+        persistent_job_queue.stop()
+
+
 # ---------------------------------------------------------------------------
 # FastAPI Application Definition
 # ---------------------------------------------------------------------------
@@ -692,6 +781,7 @@ app = FastAPI(
     version="0.1.0",
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
 # Initialize CAIPE OpenTelemetry tracing exporter if configured via environment
@@ -732,7 +822,6 @@ app.include_router(telemetry_router)
 )
 def submit_eval_job(
     request: EvaluationRequest,
-    background_tasks: BackgroundTasks,
     user: UserContext = Depends(get_current_user),
 ) -> JobResponse:
     """Submit an evaluation job asynchronously using JSON request parameters."""
@@ -746,7 +835,7 @@ def submit_eval_job(
     if job["cached"]:
         return JobResponse(**job)
 
-    background_tasks.add_task(execute_evaluation_job, job["job_id"], request)
+    persistent_job_queue.enqueue(job["job_id"], eval_hash, config_dict)
     return JobResponse(**job)
 
 
@@ -758,7 +847,6 @@ def submit_eval_job(
     tags=["Evaluation Jobs"],
 )
 async def submit_eval_job_with_upload(
-    background_tasks: BackgroundTasks,
     file: UploadFile = File(..., description="Dataset file (JSON/CSV)"),
     dataset_name: str = Query("custom_upload", description="Dataset name"),
     answer_mode: str = Query(
@@ -826,9 +914,7 @@ async def submit_eval_job_with_upload(
         shutil.rmtree(temp_dir, ignore_errors=True)
         return JobResponse(**job)
 
-    background_tasks.add_task(
-        execute_evaluation_job, job["job_id"], req, temp_file_path
-    )
+    persistent_job_queue.enqueue(job["job_id"], eval_hash, config_dict)
     return JobResponse(**job)
 
 
@@ -1086,7 +1172,7 @@ def save_job_results_to_db(
         )
 
     try:
-        sink = DatabaseResultSink()
+        sink = PostgresResultSink()
         sink.save(
             results_dir=Path(DEFAULT_RESULTS_DIR),
             prefix=job["config_args"].get("dataset_name", "enterprise"),
@@ -1121,7 +1207,7 @@ def query_db_evaluation_runs(
     """Query recent evaluation experiment runs stored in PostgreSQL database."""
     try:
         load_dotenv_loose(DEFAULT_ENV_FILE)
-        sink = DatabaseResultSink()
+        sink = PostgresResultSink()
         runs = sink.query_runs(limit=limit)
         return {"count": len(runs), "runs": runs}
     except Exception as e:

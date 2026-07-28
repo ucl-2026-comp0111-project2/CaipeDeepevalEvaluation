@@ -21,8 +21,8 @@ from deepeval_eval.llm_client import DeepEvalJudge, OpenAICompatibleClient
 from deepeval_eval.metrics import build_metrics, doc_id_scores
 from deepeval_eval.prompt_style import DEFAULT_PROMPT_STYLE
 from deepeval_eval.sinks import (
-    DatabaseResultSink,
     FileResultSink,
+    PostgresResultSink,
     ResultSink,
     write_evaluation_results,
 )
@@ -340,7 +340,7 @@ def run_evaluation(
 
     sinks: list[ResultSink] = [FileResultSink()]
     if config.save_to_db:
-        sinks.append(DatabaseResultSink(connection_string=config.db_connection_string))
+        sinks.append(PostgresResultSink(connection_string=config.db_connection_string))
 
     write_evaluation_results(
         results_dir=config.results_dir,
