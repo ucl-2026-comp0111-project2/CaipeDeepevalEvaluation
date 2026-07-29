@@ -291,22 +291,28 @@ def extract_contexts_and_sources(
     return contexts, sources
 
 
-def build_caipe_client(env_values: dict[str, Any]) -> CaipeRagClient:
-    """Helper to instantiate CaipeRagClient from environment dict."""
+def build_caipe_client(
+    caipe_settings: Any | None = None,
+) -> CaipeRagClient:
+    """Instantiate CaipeRagClient from CaipeClientSettings or environment variables."""
+    from deepeval_eval.core.config import CaipeClientSettings
 
-    def _environ_get(key: str, default: str | None = None) -> str | None:
-        return env_values.get(key) or default
+    settings = (
+        caipe_settings
+        if isinstance(caipe_settings, CaipeClientSettings)
+        else CaipeClientSettings()
+    )
+
+    raw_token = settings.auth_token.get_secret_value() if settings.auth_token else None
+    raw_secret = (
+        settings.client_secret.get_secret_value() if settings.client_secret else None
+    )
 
     return CaipeRagClient(
-        base_url=_environ_get("CAIPE_BASE_URL", "https://caipe.homelab/api/rag-server")
-        or "https://caipe.homelab/api/rag-server",
-        token=_environ_get("CAIPE_AUTH_TOKEN") or _environ_get("AUTH_TOKEN"),
-        verify=(_environ_get("INSECURE_SSL", "false") or "false").lower()
-        not in ("true", "1", "yes"),
-        keycloak_url=_environ_get(
-            "KEYCLOAK_URL",
-            "https://keycloak.caipe.homelab/realms/caipe/protocol/openid-connect/token",
-        ),
-        client_id=_environ_get("CAIPE_CLIENT_ID"),
-        client_secret=_environ_get("CAIPE_CLIENT_SECRET"),
+        base_url=settings.base_url,
+        token=raw_token,
+        verify=not settings.insecure,
+        keycloak_url=settings.keycloak_url,
+        client_id=settings.client_id,
+        client_secret=raw_secret,
     )

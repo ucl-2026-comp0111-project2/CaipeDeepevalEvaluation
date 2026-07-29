@@ -220,12 +220,10 @@ def test_caipe_rag_client_prompt_style_query() -> None:
         assert "Keep the answer short" in mock_llm.generate.call_args[0][0]
 
 
-def test_build_caipe_client_positive() -> None:
-    env_values = {
-        "CAIPE_BASE_URL": "http://localhost:8080",
-        "CAIPE_AUTH_TOKEN": "token123",
-        "INSECURE_SSL": "true",
-    }
-    client = build_caipe_client(env_values)
+def test_build_caipe_client_positive(monkeypatch) -> None:
+    monkeypatch.setenv("CAIPE_BASE_URL", "http://localhost:8080")
+    monkeypatch.setenv("CAIPE_AUTH_TOKEN", "token123")
+    monkeypatch.setenv("INSECURE_SSL", "true")
+    client = build_caipe_client()
     assert client.base_url == "http://localhost:8080"
     assert client.session.verify is False

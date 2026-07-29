@@ -7,13 +7,14 @@ import threading
 from typing import Any
 
 import httpx
-from pydantic import BaseModel
+from pydantic import BaseModel, SecretStr
 from tenacity import (
     retry,
     stop_after_attempt,
     wait_exponential,
 )
 
+from deepeval_eval.core.config import LLMSettings
 from deepeval_eval.core.prompt_style import (
     make_generation_prompt,
     make_short_answer_prompt,
@@ -31,10 +32,25 @@ def is_transient_error(exception: Exception) -> bool:
 
 
 class OpenAICompatibleClient:
-    def __init__(self, model: str, api_key: str, base_url: str):
-        self.model = model
-        self.api_key = api_key
-        self.base_url = base_url.rstrip("/")
+    def __init__(
+        self,
+        llm_settings: LLMSettings | None = None,
+        model: str | None = None,
+        api_key: str | SecretStr | None = None,
+        base_url: str | None = None,
+    ):
+        settings = llm_settings or LLMSettings()
+
+        self.model = model or settings.model
+        self.base_url = (base_url or settings.base_url).rstrip("/")
+
+        raw_key = api_key or settings.api_key
+        self.api_key = (
+            raw_key.get_secret_value()
+            if isinstance(raw_key, SecretStr)
+            else (str(raw_key) if raw_key is not None else "")
+        )
+
         self._lock = threading.Lock()
         self.input_tokens = 0
         self.output_tokens = 0
@@ -116,20 +132,32 @@ class OpenAICompatibleClient:
 # DeepEval expects its own model interface; this adapter routes those judge
 # calls through OpenAI-compatible endpoint.
 class DeepEvalJudge:
-    def __init__(self, provider: str, model: str, client: OpenAICompatibleClient):
+    def __init__(
+        self,
+        provider: str = "openai-compatible",
+        model: str | None = None,
+        client: OpenAICompatibleClient | None = None,
+        llm_settings: LLMSettings | None = None,
+    ):
         from deepeval.models.base_model import DeepEvalBaseLLM
+
+        llm_client = client or OpenAICompatibleClient(
+            llm_settings=llm_settings, model=model
+        )
+        provider_name = provider
+        model_name = model or llm_client.model
 
         class Judge(DeepEvalBaseLLM):
             def __init__(
                 self,
-                provider_name: str,
-                model_name: str,
-                llm_client: OpenAICompatibleClient,
+                p_name: str,
+                m_name: str,
+                judge_client: OpenAICompatibleClient,
             ):
-                self.provider_name = provider_name
-                self.model_name = model_name
-                self.llm_client = llm_client
-                super().__init__(model=model_name)
+                self.provider_name = p_name
+                self.model_name = m_name
+                self.llm_client = judge_client
+                super().__init__(model=m_name)
 
             def load_model(self, *args: Any, **kwargs: Any):
                 return self.llm_client
@@ -140,7 +168,7 @@ class DeepEvalJudge:
             def generate(
                 self, prompt: str, schema: type[BaseModel] | None = None, **kwargs: Any
             ):
-                return self.model.generate(prompt, schema=schema)
+                return self.llm_client.generate(prompt, schema=schema)
 
             async def a_generate(
                 self, prompt: str, schema: type[BaseModel] | None = None, **kwargs: Any
@@ -149,7 +177,7 @@ class DeepEvalJudge:
                     self.generate, prompt, schema=schema, **kwargs
                 )
 
-        self.model = Judge(provider, model, client)
+        self.model = Judge(provider_name, model_name, llm_client)
 
 
 def with_json_schema_instruction(prompt: str, schema: type[BaseModel]) -> str:

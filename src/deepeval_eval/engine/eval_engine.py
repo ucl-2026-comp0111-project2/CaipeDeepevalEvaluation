@@ -1,24 +1,17 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
-from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
 from deepeval_eval.api.telemetry import trace_evaluation_span
 from deepeval_eval.clients.llm import DeepEvalJudge, OpenAICompatibleClient
 from deepeval_eval.core.config import (
-    DEFAULT_DATA_DIR,
-    DEFAULT_ENV_FILE,
-    DEFAULT_GATE_CONFIG,
-    DEFAULT_RESULTS_DIR,
+    EvalConfig,
     ensure_dirs,
-    load_dotenv_loose,
-    resolve_llm_settings,
 )
 from deepeval_eval.core.io_utils import sanitize_path
-from deepeval_eval.core.prompt_style import DEFAULT_PROMPT_STYLE
 from deepeval_eval.datasets.loader import BaseDataLoader, FileDataLoader
 from deepeval_eval.engine.metrics import build_metrics, doc_id_scores
 from deepeval_eval.sinks import (
@@ -37,100 +30,41 @@ class QualityGateError(RuntimeError):
     pass
 
 
-@dataclass
-class EvalConfig:
-    dataset_name: str = "enterprise"
-    answer_mode: str = "generate"
-    datasource_id: str | None = None
-    data_dir: Path = field(default_factory=lambda: DEFAULT_DATA_DIR)
-    questions_file: Path | None = None
-    prompt_style: str | None = DEFAULT_PROMPT_STYLE
-    prompt_config: Path | None = None
-    combine_with_level: bool | None = None
-    max_items: int | None = None
-    limit_per_category: int | None = None
-    top_k: int = 3
-    max_context_chars: int = 12000
-    llm_base_url: str | None = None
-    llm_api_key: str | None = None
-    llm_model: str | None = None
-    agentic: bool = False
-    agent_id: str | None = None
-    supervisor_url: str | None = None
-    fail_on_error: bool = False
-    oracle_retrieval: bool = False
-    gate: bool = False
-    gate_config: Path = field(default_factory=lambda: DEFAULT_GATE_CONFIG)
-    env_file: Path = field(default_factory=lambda: DEFAULT_ENV_FILE)
-    results_dir: Path = field(default_factory=lambda: DEFAULT_RESULTS_DIR)
-    question_ids: str | None = None
-    question_indices: str | None = None
-    batch_id: str | None = None
-    run_id: str | None = None
-    oracle_testing: bool = False
-    save_to_db: bool = False
-    db_connection_string: str | None = None
-
-    def __post_init__(self) -> None:
-        if self.oracle_testing:
-            self.oracle_retrieval = True
-            self.answer_mode = "ground_truth"
-
-        if self.answer_mode not in ("generate", "ground_truth"):
-            raise ValueError(
-                f"Invalid answer_mode: '{self.answer_mode}'. Must be 'generate' or 'ground_truth'"
-            )
-
-    def to_config_args(self) -> dict[str, Any]:
-        """Convert dataclass fields to serializable configuration dictionary."""
-        config = {}
-        for k, v in self.__dict__.items():
-            if (
-                v is None
-                or k in ("llm_api_key", "db_connection_string")
-                or k.startswith("_")
-            ):
-                continue
-            if isinstance(v, Path):
-                config[k] = str(v)
-            else:
-                config[k] = v
-        return config
-
-
-def _build_rag_client(config: EvalConfig, env_values: dict[str, Any]) -> Any:
-    """Factory function to build the appropriate RAG client for the evaluation run."""
+def _build_rag_client(config: Any) -> Any:
+    """Factory function to build RAG client using explicit settings injection."""
     from deepeval_eval.clients.caipe import build_caipe_client
-
-    supervisor_url = (
-        getattr(config, "supervisor_url", None)
-        or env_values.get("CAIPE_SUPERVISOR_URL")
-        or env_values.get("SUPERVISOR_URL")
-        or __import__("os").getenv("CAIPE_SUPERVISOR_URL")
-        or "http://localhost:8000"
-    )
-
-    datasource_id = getattr(config, "datasource_id", None)
-    if datasource_id:
-        __import__("os").environ["CAIPE_DATASOURCE_ID"] = datasource_id
 
     if getattr(config, "oracle_retrieval", False):
         from deepeval_eval.clients.oracle import OracleRagClient
 
-        caipe_client = build_caipe_client(env_values)
+        caipe_settings = getattr(config, "caipe", None)
+        caipe_client = build_caipe_client(
+            caipe_settings=caipe_settings
+            if hasattr(caipe_settings, "model_dump")
+            else None
+        )
         return OracleRagClient(caipe_client)
     elif getattr(config, "agentic", False):
         from deepeval_eval.clients.rag import AgenticRagAdapter
 
+        agentic_settings = getattr(config, "agentic_settings", None)
         return AgenticRagAdapter(
-            supervisor_url=supervisor_url,
+            agentic_settings=agentic_settings
+            if hasattr(agentic_settings, "model_dump")
+            else None,
             results_dir=getattr(config, "results_dir", None),
+            supervisor_url=getattr(config, "supervisor_url", None),
             fail_on_error=getattr(config, "fail_on_error", False),
-            datasource_id=datasource_id,
+            datasource_id=getattr(config, "datasource_id", None),
             agent_id=getattr(config, "agent_id", None),
         )
     else:
-        return build_caipe_client(env_values)
+        caipe_settings = getattr(config, "caipe", None)
+        return build_caipe_client(
+            caipe_settings=caipe_settings
+            if hasattr(caipe_settings, "model_dump")
+            else None
+        )
 
 
 def run_evaluation(
@@ -154,19 +88,15 @@ def run_evaluation(
             from deepeval_eval.core.prompt_style import load_prompt_styles_from_config
 
             load_prompt_styles_from_config(config.prompt_config)
-        env_values = load_dotenv_loose(config.env_file)
-        base_url, api_key, model = resolve_llm_settings(
-            config.env_file, config.llm_base_url, config.llm_api_key, config.llm_model
-        )
 
-    llm_client = OpenAICompatibleClient(model=model, api_key=api_key, base_url=base_url)
+    llm_client = OpenAICompatibleClient(llm_settings=config.llm)
     if metrics is None:
-        judge = DeepEvalJudge("openai-compatible", model, llm_client).model
+        judge = DeepEvalJudge(client=llm_client).model
         metrics = build_metrics(judge)
 
     from deepeval.test_case import LLMTestCase
 
-    datasource_id = config.datasource_id or env_values.get("CAIPE_DATASOURCE_ID")
+    datasource_id = config.datasource_id or os.environ.get("CAIPE_DATASOURCE_ID")
     dataset_name = config.dataset_name
 
     if data_loader is None:
@@ -216,7 +146,7 @@ def run_evaluation(
         rows = [rows[i - 1] for i in sorted(indices) if 1 <= i <= len(rows)]
 
     if rag_client is None:
-        rag_client = _build_rag_client(config, env_values)
+        rag_client = _build_rag_client(config)
 
     results: list[dict[str, Any]] = []
     start_eval_time = time.time()
@@ -340,7 +270,7 @@ def run_evaluation(
 
     sinks: list[ResultSink] = [FileResultSink()]
     if config.save_to_db:
-        sinks.append(PostgresResultSink(connection_string=config.db_connection_string))
+        sinks.append(PostgresResultSink(db_settings=config.db))
 
     write_evaluation_results(
         results_dir=config.results_dir,

@@ -146,7 +146,7 @@ def test_agentic_retriever_init_negative():
     ):
         ret = AgenticRetriever()
         assert ret.agent_api_url is not None
-        assert ret.timeout == 120.0
+        assert ret.timeout == 200.0
         assert ret.insecure is False
         assert ret.use_a2a is False  # Default to False (gateway API)
 

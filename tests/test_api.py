@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
 from fastapi.testclient import TestClient
 
 from deepeval_eval.api.app import (
@@ -18,8 +19,6 @@ from deepeval_eval.api.app import (
     run_server,
     sanitize_config_args,
 )
-
-import pytest
 
 client = TestClient(app)
 
@@ -863,3 +862,92 @@ def test_submit_eval_job_sanitizes_credentials():
     assert "llm_api_key" not in sanitized
     assert "auth_token" not in sanitized
     assert sanitized["questions_file"] == "questions.json"
+
+
+def test_submit_eval_job_with_upload_preserves_questions_file(tmp_path: Path):
+    """Verify POST /eval/jobs/upload preserves questions_file in EvaluationRequest config_dict."""
+    with patch("deepeval_eval.api.app.persistent_job_queue.enqueue") as mock_enqueue:
+        file_content = b'[{"user_input": "What is CAIPE upload?"}]'
+        files = {"file": ("test_questions.json", file_content, "application/json")}
+
+        res = client.post(
+            "/eval/jobs/upload?dataset_name=test_upload_json&force_rerun=true",
+            files=files,
+        )
+        assert res.status_code == 202
+        assert mock_enqueue.called
+        enqueue_args = mock_enqueue.call_args[0]
+        config_dict = enqueue_args[2]
+        assert "questions_file" in config_dict
+        assert config_dict["questions_file"].endswith(".json")
+
+
+@patch("deepeval_eval.api.app._build_rag_client")
+@patch("deepeval_eval.api.app.run_evaluation")
+def test_execute_evaluation_job_handles_upload_json_file(
+    mock_run_eval, mock_build_client, tmp_path: Path
+):
+    """Verify execute_evaluation_job processes uploaded .json dataset file cleanly."""
+    from deepeval_eval.api.app import (
+        EvaluationRequest,
+        execute_evaluation_job,
+        job_manager,
+    )
+
+    q_file = tmp_path / "eval_upload_123" / "upload_dataset.json"
+    q_file.parent.mkdir(parents=True, exist_ok=True)
+    q_file.write_text('[{"user_input": "q1"}, {"user_input": "q2"}]', encoding="utf-8")
+
+    mock_run_eval.return_value = [{"question": "q1", "actual_output": "ans1"}]
+
+    req = EvaluationRequest(
+        dataset_name="custom_upload",
+        questions_file=str(q_file),
+        question_ids=["q1", "q2"],
+        question_indices=[1, 2],
+        save_to_db=False,
+    )
+    job = job_manager.create_job(
+        "hash_upload_json_exec", req.model_dump(), force_rerun=True
+    )
+
+    execute_evaluation_job(job["job_id"], req, temp_file_path=str(q_file))
+
+    assert mock_run_eval.called
+    eval_config = mock_run_eval.call_args[0][0]
+    assert str(eval_config.questions_file) == str(q_file)
+    assert eval_config.question_ids == "q1,q2"
+    assert eval_config.question_indices == "1,2"
+
+
+@patch("deepeval_eval.api.app.PostgresResultSink")
+@patch("deepeval_eval.api.app._build_rag_client")
+@patch("deepeval_eval.api.app.run_evaluation")
+def test_execute_evaluation_job_save_to_db_uses_to_config_args(
+    mock_run_eval, mock_build_client, mock_sink_cls, tmp_path: Path
+):
+    """Verify execute_evaluation_job invokes to_config_args() (not to_dict()) on save_to_db."""
+    from deepeval_eval.api.app import (
+        EvaluationRequest,
+        execute_evaluation_job,
+        job_manager,
+    )
+
+    mock_sink_instance = MagicMock()
+    mock_sink_cls.return_value = mock_sink_instance
+    mock_run_eval.return_value = [{"question": "q1", "actual_output": "ans1"}]
+
+    req = EvaluationRequest(
+        dataset_name="db_save_test",
+        save_to_db=True,
+    )
+    job = job_manager.create_job(
+        "hash_db_save_test", req.model_dump(), force_rerun=True
+    )
+
+    execute_evaluation_job(job["job_id"], req)
+
+    assert mock_sink_instance.save.called
+    save_kwargs = mock_sink_instance.save.call_args[1]
+    assert "config_args" in save_kwargs
+    assert isinstance(save_kwargs["config_args"], dict)

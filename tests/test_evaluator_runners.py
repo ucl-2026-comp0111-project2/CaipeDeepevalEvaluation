@@ -28,7 +28,6 @@ def test_build_config_args_positive(tmp_path: Path) -> None:
     assert "_private" not in res
     assert res["top_k"] == 3
     assert res["agentic"] is True
-    assert res["env_file"] == str(tmp_path / ".env")
 
 
 def test_build_config_args_negative() -> None:
@@ -37,12 +36,12 @@ def test_build_config_args_negative() -> None:
     assert res == {}
 
 
-def test_build_rag_client_positive(tmp_path: Path) -> None:
-    env_values = {"CAIPE_BASE_URL": "http://localhost:8080"}
+def test_build_rag_client_positive(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("CAIPE_BASE_URL", "http://localhost:8080")
 
     # Oracle RAG client
     args_oracle = argparse.Namespace(oracle_retrieval=True, agentic=False)
-    client1 = _build_rag_client(args_oracle, env_values)
+    client1 = _build_rag_client(args_oracle)
     assert client1.__class__.__name__ == "OracleRagClient"
 
     # Agentic RAG client
@@ -54,12 +53,12 @@ def test_build_rag_client_positive(tmp_path: Path) -> None:
         fail_on_error=False,
     )
     with patch("deepeval_eval.engine.agentic_rag.AgenticRetriever"):
-        client2 = _build_rag_client(args_agentic, env_values)
+        client2 = _build_rag_client(args_agentic)
         assert client2.__class__.__name__ == "AgenticRagAdapter"
 
     # Standard CAIPE RAG client
     args_std = argparse.Namespace(precompute=False, agentic=False)
-    client3 = _build_rag_client(args_std, env_values)
+    client3 = _build_rag_client(args_std)
     assert client3.__class__.__name__ == "CaipeRagClient"
 
 
@@ -69,10 +68,9 @@ def test_build_parsers_positive() -> None:
 
 
 def test_run_eval_positive(tmp_path: Path, monkeypatch) -> None:
-    env_file = tmp_path / ".env"
-    env_file.write_text(
-        "OPENAI_ENDPOINT=http://localhost\nOPENAI_API_KEY=k\nOPENAI_MODEL_NAME=m\n"
-    )
+    monkeypatch.setenv("OPENAI_ENDPOINT", "http://localhost")
+    monkeypatch.setenv("OPENAI_API_KEY", "k")
+    monkeypatch.setenv("OPENAI_MODEL_NAME", "m")
 
     questions_file = tmp_path / "questions.jsonl"
     questions_file.write_text(
@@ -81,7 +79,6 @@ def test_run_eval_positive(tmp_path: Path, monkeypatch) -> None:
 
     args = argparse.Namespace(
         results_dir=tmp_path / "results",
-        env_file=env_file,
         llm_base_url="http://localhost",
         llm_api_key="k",
         llm_model="m",
@@ -110,7 +107,8 @@ def test_run_eval_positive(tmp_path: Path, monkeypatch) -> None:
 
     with (
         patch(
-            "deepeval_eval.engine.deepeval_evaluator._build_rag_client", return_value=mock_rag
+            "deepeval_eval.engine.deepeval_evaluator._build_rag_client",
+            return_value=mock_rag,
         ),
         patch("deepeval_eval.engine.deepeval_evaluator.build_metrics", return_value=[]),
     ):

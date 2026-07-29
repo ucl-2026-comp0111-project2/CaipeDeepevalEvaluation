@@ -99,6 +99,23 @@ class FileDataLoader(BaseDataLoader):
                     rows.append(item)
                     if max_items and len(rows) >= max_items:
                         break
+        elif path.suffix == ".json":
+            with path.open("r", encoding="utf-8") as f:
+                content = json.load(f)
+                items = content if isinstance(content, list) else [content]
+                for item in items:
+                    if not isinstance(item, dict):
+                        continue
+                    cat = item.get("category", "basic") or "basic"
+                    if limit_per_category is not None:
+                        key = (cat, item.get("level")) if combine_with_level else cat
+                        count = category_counts.get(key, 0)
+                        if count >= limit_per_category:
+                            continue
+                        category_counts[key] = count + 1
+                    rows.append(item)
+                    if max_items and len(rows) >= max_items:
+                        break
         elif path.suffix == ".csv":
             import csv
 

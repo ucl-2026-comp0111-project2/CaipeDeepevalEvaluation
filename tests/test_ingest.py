@@ -257,9 +257,7 @@ def test_main_cli_execution_positive() -> None:
     """Verify main function parses arguments and triggers ingestion."""
     with (
         patch("sys.argv", ["ingest", "--skip-ingest"]),
-        patch("deepeval_eval.ingest.ingest.load_dotenv_loose") as mock_dotenv,
         patch("deepeval_eval.ingest.ingest.run_ingest") as mock_run_ingest,
     ):
         main()
-        mock_dotenv.assert_called_once()
         mock_run_ingest.assert_called_once()

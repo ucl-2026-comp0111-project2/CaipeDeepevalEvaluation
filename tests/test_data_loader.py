@@ -60,6 +60,16 @@ def test_file_data_loader(tmp_path: Path):
     assert rows[0]["user_input"] == "q1"
 
 
+def test_file_data_loader_json(tmp_path: Path):
+    q_file = tmp_path / "sample_questions.json"
+    q_file.write_text('[{"user_input": "q1"}, {"user_input": "q2"}]', encoding="utf-8")
+
+    loader = FileDataLoader(questions_file=q_file)
+    rows = loader.load()
+    assert len(rows) == 2
+    assert rows[0]["user_input"] == "q1"
+
+
 def test_database_data_loader_requires_connection_string():
     loader = DatabaseDataLoader()
     with pytest.raises(ValueError, match="connection_string is required"):

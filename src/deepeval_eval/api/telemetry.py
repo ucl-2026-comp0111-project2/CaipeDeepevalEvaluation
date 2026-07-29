@@ -16,7 +16,6 @@ from prometheus_client import (
     generate_latest,
 )
 
-from deepeval_eval.core.config import DEFAULT_ENV_FILE, load_dotenv_loose
 from deepeval_eval.sinks import PostgresResultSink
 
 logger = logging.getLogger(__name__)
@@ -265,10 +264,10 @@ def health_check(response: Response) -> dict[str, Any]:
 
     db_status = "not_configured"
     try:
-        load_dotenv_loose(DEFAULT_ENV_FILE)
         if os.environ.get("POSTGRES_DB") or os.environ.get("DATABASE_URL"):
             PostgresResultSink()
             db_status = "connected"
+
     except Exception as db_err:
         logger.debug(f"Health check DB probe error: {db_err}")
         db_status = "degraded"

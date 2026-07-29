@@ -40,10 +40,8 @@ from deepeval_eval.api.telemetry import (
 from deepeval_eval.core.config import (
     DEFAULT_CACHE_DIR,
     DEFAULT_DATA_DIR,
-    DEFAULT_ENV_FILE,
     DEFAULT_GATE_CONFIG,
     DEFAULT_RESULTS_DIR,
-    load_dotenv_loose,
 )
 from deepeval_eval.core.io_utils import sanitize_path
 from deepeval_eval.core.prompt_style import DEFAULT_PROMPT_STYLE
@@ -136,6 +134,9 @@ class EvaluationRequest(BaseModel):
         default=False,
         description="Bypass evaluation deduplication cache and force rerun",
     )
+    questions_file: str | None = Field(
+        default=None, description="Path to custom evaluation questions file"
+    )
     question_ids: list[str] | None = Field(
         default=None, description="List of specific question IDs to evaluate"
     )
@@ -216,7 +217,6 @@ def sanitize_config_args(config_dict: dict[str, Any]) -> dict[str, Any]:
         "auth_token",
         "client_secret",
         "db_connection_string",
-        "env_file",
     }
     path_keys = {"questions_file", "results_dir", "log_file"}
     sanitized = {}
@@ -295,6 +295,11 @@ class LocalCacheManager:
 
     def set(self, eval_hash: str, job_data: dict[str, Any]) -> None:
         """Store evaluation metadata in cache with current timestamp."""
+        status = job_data.get("status")
+        if (
+            status and status not in ("completed", JobStatusEnum.COMPLETED)
+        ) or job_data.get("error"):
+            return
         path = self._get_cache_path(eval_hash)
         payload = dict(job_data)
         job_id = payload.get("job_id", eval_hash)
@@ -624,11 +629,22 @@ def execute_evaluation_job(
     start_time = time.time()
 
     try:
-        q_file = validate_safe_path(temp_file_path) if temp_file_path else None
+        raw_qfile = req.questions_file or temp_file_path
+        q_file = validate_safe_path(raw_qfile) if raw_qfile else None
         p_config = SERVER_PROMPT_CONFIG
-        env_file = DEFAULT_ENV_FILE
         results_dir = DEFAULT_RESULTS_DIR
         g_config = DEFAULT_GATE_CONFIG
+
+        q_ids_str = (
+            ",".join(req.question_ids)
+            if isinstance(req.question_ids, list)
+            else req.question_ids
+        )
+        q_idx_str = (
+            ",".join(str(i) for i in req.question_indices)
+            if isinstance(req.question_indices, list)
+            else req.question_indices
+        )
 
         eval_config = EvalConfig(
             dataset_name=req.dataset_name,
@@ -653,15 +669,13 @@ def execute_evaluation_job(
             oracle_testing=req.oracle_testing,
             gate=req.gate,
             gate_config=g_config,
-            env_file=env_file,
             results_dir=results_dir,
-            question_ids=req.question_ids,
-            question_indices=req.question_indices,
+            question_ids=q_ids_str,
+            question_indices=q_idx_str,
             save_to_db=req.save_to_db,
         )
 
-        env_values = load_dotenv_loose(eval_config.env_file)
-        rag_client = _build_rag_client(eval_config, env_values)
+        rag_client = _build_rag_client(eval_config)
 
         results = run_evaluation(eval_config, rag_client=rag_client)
 
@@ -684,13 +698,13 @@ def execute_evaluation_job(
 
         if eval_config.save_to_db and results:
             try:
-                sink = PostgresResultSink()
+                sink = PostgresResultSink(db_manager=db_manager)
                 sink.save(
                     results_dir=Path(DEFAULT_RESULTS_DIR),
                     prefix=eval_config.dataset_name or "enterprise",
                     results=results,
                     evaluation_time=eval_time,
-                    config_args=eval_config.to_dict(),
+                    config_args=eval_config.to_config_args(),
                 )
                 job_manager.mark_saved_to_db(job_id)
                 logger.info(
@@ -1176,7 +1190,7 @@ def save_job_results_to_db(
         )
 
     try:
-        sink = PostgresResultSink()
+        sink = PostgresResultSink(db_manager=db_manager)
         sink.save(
             results_dir=Path(DEFAULT_RESULTS_DIR),
             prefix=job["config_args"].get("dataset_name", "enterprise"),
@@ -1210,9 +1224,9 @@ def query_db_evaluation_runs(
 ) -> dict[str, Any]:
     """Query recent evaluation experiment runs stored in PostgreSQL database."""
     try:
-        load_dotenv_loose(DEFAULT_ENV_FILE)
-        sink = PostgresResultSink()
+        sink = PostgresResultSink(db_manager=db_manager)
         runs = sink.query_runs(limit=limit)
+
         return {"count": len(runs), "runs": runs}
     except Exception as e:
         logger.exception(f"Failed to query database evaluation runs: {e}")

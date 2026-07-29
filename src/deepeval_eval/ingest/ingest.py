@@ -11,10 +11,8 @@ from deepeval_eval.clients.caipe import CaipeRagClient
 from deepeval_eval.core.config import (
     DEFAULT_CACHE_DIR,
     DEFAULT_DATA_DIR,
-    DEFAULT_ENV_FILE,
     DEFAULT_RESULTS_DIR,
     ensure_dirs,
-    load_dotenv_loose,
 )
 
 
@@ -230,7 +228,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Dataset ingestion CLI for CAIPE evaluation benchmarks",
     )
-    parser.add_argument("--env-file", type=Path, default=DEFAULT_ENV_FILE)
     parser.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
     parser.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE_DIR)
     parser.add_argument("--results-dir", type=Path, default=DEFAULT_RESULTS_DIR)
@@ -267,7 +264,6 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
-    load_dotenv_loose(getattr(args, "env_file", DEFAULT_ENV_FILE))
     run_ingest(args)
 
 

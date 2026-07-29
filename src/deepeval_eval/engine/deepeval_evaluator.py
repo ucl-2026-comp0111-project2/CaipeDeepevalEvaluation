@@ -12,10 +12,8 @@ if __package__ in (None, ""):
 from deepeval_eval.core.config import (
     DEFAULT_CACHE_DIR,
     DEFAULT_DATA_DIR,
-    DEFAULT_ENV_FILE,
     DEFAULT_GATE_CONFIG,
     DEFAULT_RESULTS_DIR,
-    load_dotenv_loose,
 )
 from deepeval_eval.engine.eval_engine import (
     EvalConfig,
@@ -173,14 +171,13 @@ def _run_eval(args: argparse.Namespace) -> None:
         oracle_testing=getattr(args, "oracle_testing", False),
         gate=getattr(args, "gate", False),
         gate_config=getattr(args, "gate_config", DEFAULT_GATE_CONFIG),
-        env_file=getattr(args, "env_file", DEFAULT_ENV_FILE),
         results_dir=getattr(args, "results_dir", DEFAULT_RESULTS_DIR),
         question_ids=getattr(args, "question_ids", None),
         question_indices=getattr(args, "question_indices", None),
         save_to_db=getattr(args, "save_to_db", False),
     )
-    env_values = load_dotenv_loose(config.env_file)
-    rag_client = _build_rag_client(config, env_values)
+    rag_client = _build_rag_client(config)
+
     try:
         run_evaluation(config, rag_client=rag_client)
     except QualityGateError as err:
@@ -209,7 +206,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="DeepEval evaluation pipeline supporting arbitrary datasets",
     )
-    parser.add_argument("--env-file", type=Path, default=DEFAULT_ENV_FILE)
     parser.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
     parser.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE_DIR)
     parser.add_argument("--results-dir", type=Path, default=DEFAULT_RESULTS_DIR)
@@ -246,7 +242,6 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
-    load_dotenv_loose(getattr(args, "env_file", DEFAULT_ENV_FILE))
     args.func(args)
 
 

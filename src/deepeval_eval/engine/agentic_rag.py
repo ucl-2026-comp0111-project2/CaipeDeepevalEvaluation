@@ -30,7 +30,9 @@ from typing import Any
 
 import httpx
 import requests
+from pydantic import SecretStr
 
+from deepeval_eval.core.config import AgenticSettings
 from deepeval_eval.core.io_utils import sanitize_path
 
 logger = logging.getLogger(__name__)
@@ -258,47 +260,43 @@ class AgenticRetriever(BaseRetriever):
 
     def __init__(
         self,
+        settings: AgenticSettings | None = None,
         agent_api_url: str | None = None,
-        timeout: float = 120.0,
-        insecure: bool = False,
-        use_a2a: bool | None = None,
-        trace_log: bool = False,
-        logdir: str = "logs",
-        supervisor_url: str | None = None,  # for compatibility
-        fail_on_error: bool = False,
-        datasource_id: str | None = None,
+        supervisor_url: str | None = None,
         agent_id: str | None = None,
+        datasource_id: str | None = None,
+        timeout: float | None = None,
+        insecure: bool | None = None,
+        use_a2a: bool | None = None,
+        trace_log: bool | None = None,
+        fail_on_error: bool | None = None,
+        logdir: str = "logs",
     ) -> None:
         super().__init__()
-        self.datasource_id = datasource_id
-        self.agent_id = agent_id or os.getenv("CAIPE_AGENT_ID") or "hello-world"
-        self.agent_api_url = (
-            agent_api_url
-            or supervisor_url
-            or os.getenv("CAIPE_SUPERVISOR_URL")
-            or "http://localhost:8000"
+        cfg = settings or AgenticSettings()
+
+        self.agent_id = agent_id or cfg.agent_id
+        self.agent_api_url = agent_api_url or supervisor_url or cfg.supervisor_url
+        self.datasource_id = datasource_id or cfg.datasource_id
+        self.timeout = timeout if timeout is not None else cfg.timeout
+        self.insecure = insecure if insecure is not None else cfg.insecure
+        self.trace_log = trace_log if trace_log is not None else cfg.trace_log
+        self.use_a2a = use_a2a if use_a2a is not None else cfg.use_a2a
+        self.fail_on_error = (
+            fail_on_error if fail_on_error is not None else cfg.fail_on_error
         )
-        self.timeout = timeout
-        self.insecure = insecure or os.getenv("INSECURE_SSL", "").lower() in (
-            "true",
-            "1",
-            "yes",
+        self.client_id = cfg.client_id
+        self.client_secret = (
+            cfg.client_secret.get_secret_value()
+            if isinstance(cfg.client_secret, SecretStr)
+            else cfg.client_secret
         )
+        self.oidc_token_url = cfg.oidc_token_url
+        self._auth_token: str | None = None
         self.last_answer: str = ""
         self.last_raw_response: dict | None = None
         self.documents_metadata: list[dict[str, Any]] = []
-        self.trace_log = trace_log
         self.logdir = logdir
-        self.fail_on_error = fail_on_error
-
-        if use_a2a is not None:
-            self.use_a2a = use_a2a
-        else:
-            env_val = os.getenv("CAIPE_USE_A2A")
-            if env_val is not None:
-                self.use_a2a = env_val.lower() in ("true", "1", "yes")
-            else:
-                self.use_a2a = False
 
     def fit(self, documents: list[str]) -> None:
         """AgenticRetriever doesn't support local fitting."""
@@ -348,14 +346,15 @@ class AgenticRetriever(BaseRetriever):
 
     def _get_oidc_token(self) -> str | None:
         """Fetch OIDC token dynamically using client credentials, falling back to environment variables."""
-        client_id = os.getenv("CAIPE_CLIENT_ID") or os.getenv("CLIENT_ID")
-        client_secret = os.getenv("CAIPE_CLIENT_SECRET") or os.getenv("CLIENT_SECRET")
+        if self._auth_token:
+            return self._auth_token
+
+        client_id = self.client_id
+        client_secret = self.client_secret
 
         if client_id and client_secret:
             try:
-                keycloak_url = os.getenv("CAIPE_OIDC_TOKEN_URL") or os.getenv(
-                    "CAIPE_KEYCLOAK_URL"
-                )
+                keycloak_url = self.oidc_token_url
                 if not keycloak_url:
                     if "caipe.homelab" in self.agent_api_url:
                         keycloak_url = "https://keycloak.caipe.homelab/realms/caipe/protocol/openid-connect/token"
@@ -378,7 +377,7 @@ class AgenticRetriever(BaseRetriever):
                 resp.raise_for_status()
                 token = resp.json().get("access_token")
                 if token:
-                    os.environ["CAIPE_OIDC_TOKEN"] = token
+                    self._auth_token = token
                     return token
             except Exception as e:
                 logger.error("Failed to fetch fresh OIDC token from Keycloak: %s", e)
@@ -431,8 +430,7 @@ class AgenticRetriever(BaseRetriever):
                     logger.warning(
                         "Gateway returned 401 Unauthorized. Attempting token refresh..."
                     )
-                    if os.getenv("CAIPE_OIDC_TOKEN"):
-                        del os.environ["CAIPE_OIDC_TOKEN"]
+                    self._auth_token = None
                     token = self._get_oidc_token()
                     if token:
                         headers["Authorization"] = f"Bearer {token}"
@@ -722,25 +720,33 @@ class AgenticRAG(BaseRAG):
 
     def __init__(
         self,
+        settings: AgenticSettings | None = None,
         agent_api_url: str | None = None,
-        timeout: float = 120.0,
-        logdir: str = "logs",
-        insecure: bool = False,
-        use_a2a: bool | None = None,
-        trace_log: bool = False,
+        supervisor_url: str | None = None,
         agent_id: str | None = None,
+        datasource_id: str | None = None,
+        timeout: float | None = None,
+        insecure: bool | None = None,
+        use_a2a: bool | None = None,
+        trace_log: bool | None = None,
+        fail_on_error: bool | None = None,
+        logdir: str = "logs",
     ) -> None:
         super().__init__(
             llm_client=None,
             model_name="agentic",
             retriever=AgenticRetriever(
+                settings=settings,
                 agent_api_url=agent_api_url,
+                supervisor_url=supervisor_url,
+                agent_id=agent_id,
+                datasource_id=datasource_id,
                 timeout=timeout,
                 insecure=insecure,
                 use_a2a=use_a2a,
                 trace_log=trace_log,
+                fail_on_error=fail_on_error,
                 logdir=logdir,
-                agent_id=agent_id,
             ),
             logdir=logdir,
         )
@@ -755,6 +761,9 @@ class AgenticRAG(BaseRAG):
         top_k: int = 3,
         run_id: str | None = None,
         trace_log: bool | None = None,
+        max_context_chars: int = 12000,
+        datasource_id: str | None = None,
+        **kwargs: Any,
     ) -> dict[str, Any]:
         """Single call returns both contexts and answer."""
         if run_id is None:
@@ -917,19 +926,29 @@ class AgenticRAG(BaseRAG):
 
 
 def default_agentic_rag_client(
+    settings: AgenticSettings | None = None,
     logdir: str = "logs",
     agent_api_url: str | None = None,
-    timeout: float = 120.0,
-    insecure: bool = False,
+    supervisor_url: str | None = None,
+    agent_id: str | None = None,
+    datasource_id: str | None = None,
+    timeout: float | None = None,
+    insecure: bool | None = None,
     use_a2a: bool | None = None,
-    trace_log: bool = False,
+    trace_log: bool | None = None,
+    fail_on_error: bool | None = None,
 ) -> AgenticRAG:
     """Create an AgenticRAG client that routes queries through the agent API."""
     return AgenticRAG(
+        settings=settings,
         agent_api_url=agent_api_url,
+        supervisor_url=supervisor_url,
+        agent_id=agent_id,
+        datasource_id=datasource_id,
         timeout=timeout,
-        logdir=logdir,
         insecure=insecure,
         use_a2a=use_a2a,
         trace_log=trace_log,
+        fail_on_error=fail_on_error,
+        logdir=logdir,
     )

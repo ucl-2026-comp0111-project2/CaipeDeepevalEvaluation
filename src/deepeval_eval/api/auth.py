@@ -6,12 +6,10 @@ and FastAPI route protection. Compatible with CAIPE RAG server auth architecture
 
 from __future__ import annotations
 
-import importlib.util
 import logging
 import os
-import sys
+import secrets
 import time
-from pathlib import Path
 from typing import Any
 
 import httpx
@@ -19,33 +17,14 @@ import jwt
 from fastapi import Depends, HTTPException, Request
 from jwt import PyJWK
 from jwt.exceptions import PyJWTError as JWTError
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, SecretStr
+
+from deepeval_eval.core.config import AuthSettings
 
 logger = logging.getLogger(__name__)
 
 
 def _load_monorepo_auth() -> tuple[bool, Any, Any]:
-    # Check relative monorepo path ../ai-platform-engineering relative to repository root
-    project_root = Path(__file__).resolve().parents[2]
-    parent_dir = project_root.parent
-
-    candidate = parent_dir / "ai-platform-engineering"
-    if candidate.exists() and str(candidate) not in sys.path:
-        sys.path.append(str(candidate))
-
-    for module_path in (
-        "server.rbac",
-        "ai_platform_engineering.knowledge_bases.rag.server.src.server.rbac",
-    ):
-        try:
-            mod = importlib.import_module(module_path)
-            return (
-                True,
-                getattr(mod, "_unsafe_rbac_bypass_enabled", None),
-                getattr(mod, "require_authenticated_user", None),
-            )
-        except (ImportError, ModuleNotFoundError):
-            continue
     return False, None, None
 
 
@@ -190,30 +169,40 @@ class OIDCProvider:
                     "verify_iss": False,
                 },
             )
+
         return claims
 
 
 class AuthManager:
     """Manages static API keys and OIDC token validation."""
 
-    def __init__(self) -> None:
+    def __init__(self, settings: AuthSettings | None = None) -> None:
+        self._explicit_settings = settings
         self.providers: dict[str, OIDCProvider] = {}
         self._load_providers()
 
+    @property
+    def settings(self) -> AuthSettings:
+        return self._explicit_settings or AuthSettings()
+
     def _load_providers(self) -> None:
-        issuer = os.environ.get("OIDC_ISSUER_URL") or os.environ.get("OIDC_ISSUER")
-        audience = os.environ.get("OIDC_AUDIENCE") or os.environ.get("OIDC_CLIENT_ID")
-        if issuer and audience:
+        issuer = self.settings.oidc_issuer_url
+        audience = self.settings.oidc_audience or ""
+        if issuer:
             self.providers["default"] = OIDCProvider(
                 issuer=issuer,
                 audience=audience,
-                discovery_url=os.environ.get("OIDC_DISCOVERY_URL"),
-                jwks_url=os.environ.get("OIDC_JWKS_URL"),
+                discovery_url=self.settings.oidc_discovery_url,
+                jwks_url=self.settings.oidc_jwks_url,
             )
 
     async def validate_token(self, token: str) -> UserContext:
-        expected_key = os.environ.get("DEEPEVAL_API_KEY") or os.environ.get("API_KEY")
-        if expected_key and token == expected_key:
+        expected_key = (
+            self.settings.api_key.get_secret_value()
+            if isinstance(self.settings.api_key, SecretStr)
+            else self.settings.api_key
+        )
+        if expected_key and secrets.compare_digest(token, expected_key):
             return UserContext(
                 subject="service-account-key",
                 email="service-account@deepeval",
@@ -222,7 +211,10 @@ class AuthManager:
             )
 
         if not self.providers:
-            if expected_key and token != expected_key:
+            self._load_providers()
+
+        if not self.providers:
+            if expected_key and not secrets.compare_digest(token, expected_key):
                 raise JWTError("Invalid API key")
             raise JWTError("No OIDC providers configured and static key mismatch")
 
@@ -266,7 +258,9 @@ async def require_authenticated_user(
         except HTTPException:
             pass
         except Exception as e:
-            logger.debug(f"Monorepo auth execution failed, falling back: {e}")
+            logger.warning(
+                f"Monorepo auth execution failed, falling back to local auth: {e}"
+            )
 
     auth_header = request.headers.get("Authorization")
     api_key_header = request.headers.get("X-API-Key")
@@ -284,6 +278,7 @@ async def require_authenticated_user(
         try:
             return await auth_manager.validate_token(token)
         except Exception as exc:
+            logger.warning(f"Authentication failed for token: {exc}")
             raise HTTPException(
                 status_code=401,
                 detail=f"Invalid authentication token: {exc}",
@@ -313,6 +308,11 @@ def RequirePermission(permission: str) -> Any:
     def _permission_guard(
         user: UserContext = Depends(require_authenticated_user),
     ) -> UserContext:
+        if permission == "admin" and user.role != Role.ADMIN:
+            raise HTTPException(
+                status_code=403,
+                detail=f"User lacks required '{permission}' permission",
+            )
         return user
 
     return _permission_guard

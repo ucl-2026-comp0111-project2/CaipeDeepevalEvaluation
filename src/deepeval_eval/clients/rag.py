@@ -50,26 +50,44 @@ class AgenticRagAdapter(BaseRagClient):
 
     def __init__(
         self,
-        supervisor_url: str = "http://localhost:8000",
+        supervisor_url: str | None = None,
         results_dir: Any = None,
-        fail_on_error: bool = False,
+        fail_on_error: bool | None = None,
         datasource_id: str | None = None,
         agent_id: str | None = None,
+        insecure: bool | None = None,
+        agentic_settings: Any | None = None,
     ) -> None:
+        from deepeval_eval.core.config import AgenticSettings
+
+        settings = (
+            agentic_settings
+            if isinstance(agentic_settings, AgenticSettings)
+            else AgenticSettings()
+        )
+
         agentic_rag_module = __import__(
             "deepeval_eval.engine.agentic_rag", fromlist=["AgenticRetriever"]
         )
         logdir = str(results_dir / "logs") if results_dir else "./logs"
         self.datasource_id = datasource_id
         self.agent_id = agent_id
-        self.retriever = agentic_rag_module.AgenticRetriever(
-            supervisor_url=supervisor_url,
-            timeout=200.0,
-            logdir=logdir,
-            fail_on_error=fail_on_error,
-            datasource_id=datasource_id,
-            agent_id=agent_id,
-        )
+
+        resolved_supervisor_url = supervisor_url or settings.supervisor_url
+        retriever_kwargs: dict[str, Any] = {
+            "supervisor_url": resolved_supervisor_url,
+            "timeout": settings.timeout,
+            "logdir": logdir,
+            "fail_on_error": fail_on_error
+            if fail_on_error is not None
+            else settings.fail_on_error,
+            "datasource_id": datasource_id,
+            "agent_id": agent_id,
+        }
+        if insecure is not None:
+            retriever_kwargs["insecure"] = insecure
+
+        self.retriever = agentic_rag_module.AgenticRetriever(**retriever_kwargs)
 
     def query(
         self,

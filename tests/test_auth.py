@@ -355,7 +355,9 @@ async def test_require_authenticated_user_monorepo_positive():
     mock_require_user = AsyncMock(return_value=mock_user)
     with (
         patch("deepeval_eval.api.auth.MONOREPO_AUTH_AVAILABLE", True),
-        patch("deepeval_eval.api.auth.caipe_require_authenticated_user", mock_require_user),
+        patch(
+            "deepeval_eval.api.auth.caipe_require_authenticated_user", mock_require_user
+        ),
     ):
         user = await require_authenticated_user(request)
         assert user.subject == "m1"

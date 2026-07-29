@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import threading
 import time
 from collections import deque
@@ -11,192 +10,9 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from deepeval_eval.core.config import get_max_concurrent_jobs
+from deepeval_eval.db import DatabaseManager
 
 logger = logging.getLogger(__name__)
-
-
-class DatabaseManager:
-    """Standardized PostgreSQL database manager."""
-
-    def __init__(self, connection_string: str | None = None):
-        self.connection_string = connection_string
-        self._lock = threading.Lock()
-        if self.is_postgres():
-            try:
-                self.init_db()
-            except Exception as exc:
-                logger.debug(f"PostgreSQL init_db deferred: {exc}")
-
-    def is_postgres(self) -> bool:
-        conn_str = (
-            self.connection_string
-            or os.environ.get("DATABASE_URL")
-            or os.environ.get("LANGGRAPH_CHECKPOINT_POSTGRES_DSN")
-            or os.environ.get("POSTGRES_DSN")
-        )
-        if conn_str:
-            return conn_str.startswith("postgresql://") or conn_str.startswith(
-                "postgres://"
-            )
-        host = (
-            os.environ.get("POSTGRES_HOST")
-            or os.environ.get("PGHOST")
-            or os.environ.get("DB_HOST")
-        )
-        return bool(host)
-
-    def get_connection(self) -> Any:
-        if not self.is_postgres():
-            raise RuntimeError("PostgreSQL database is not configured.")
-
-        import psycopg2
-
-        conn_str = (
-            self.connection_string
-            or os.environ.get("DATABASE_URL")
-            or os.environ.get("LANGGRAPH_CHECKPOINT_POSTGRES_DSN")
-            or os.environ.get("POSTGRES_DSN")
-        )
-        if conn_str:
-            return psycopg2.connect(conn_str)
-
-        host = (
-            os.environ.get("POSTGRES_HOST")
-            or os.environ.get("PGHOST")
-            or os.environ.get("DB_HOST", "localhost")
-        )
-        port = (
-            os.environ.get("POSTGRES_PORT")
-            or os.environ.get("PGPORT")
-            or os.environ.get("DB_PORT", "5432")
-        )
-        dbname = (
-            os.environ.get("POSTGRES_DB")
-            or os.environ.get("PGDATABASE")
-            or os.environ.get("DB_NAME", "caipe_eval")
-        )
-        user = (
-            os.environ.get("POSTGRES_USER")
-            or os.environ.get("PGUSER")
-            or os.environ.get("DB_USER", "postgres")
-        )
-        password = (
-            os.environ.get("POSTGRES_PASSWORD")
-            or os.environ.get("PGPASSWORD")
-            or os.environ.get("DB_PASSWORD", "")
-        )
-        sslmode = os.environ.get("PGSSLMODE", "prefer")
-        return psycopg2.connect(
-            host=host,
-            port=port,
-            dbname=dbname,
-            user=user,
-            password=password,
-            sslmode=sslmode,
-        )
-
-    def init_db(self) -> None:
-        """Initialize PostgreSQL schema tables if not present."""
-        if not self.is_postgres():
-            return
-        with self._lock:
-            conn = self.get_connection()
-            try:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        """
-                        CREATE TABLE IF NOT EXISTS eval_job_queue (
-                            job_id       TEXT PRIMARY KEY,
-                            eval_hash    TEXT NOT NULL,
-                            status       TEXT NOT NULL,
-                            config_json  TEXT NOT NULL,
-                            created_at   DOUBLE PRECISION NOT NULL,
-                            started_at   DOUBLE PRECISION,
-                            completed_at DOUBLE PRECISION,
-                            error        TEXT
-                        );
-                        CREATE TABLE IF NOT EXISTS batches (
-                            batch_id    TEXT PRIMARY KEY,
-                            created_at  TIMESTAMP NOT NULL DEFAULT now(),
-                            description TEXT
-                        );
-                        CREATE TABLE IF NOT EXISTS runs (
-                            run_id       TEXT PRIMARY KEY,
-                            batch_id     TEXT NOT NULL,
-                            config_name  TEXT NOT NULL,
-                            config_json  JSONB,
-                            started_at   TIMESTAMP,
-                            finished_at  TIMESTAMP,
-                            loaded_at    TIMESTAMP NOT NULL DEFAULT now()
-                        );
-                        CREATE TABLE IF NOT EXISTS eval_results (
-                            id         BIGSERIAL PRIMARY KEY,
-                            run_id     TEXT NOT NULL,
-                            batch_id   TEXT NOT NULL,
-                            question   TEXT,
-                            row_data   JSONB
-                        );
-                        CREATE TABLE IF NOT EXISTS run_summary (
-                            run_id        TEXT PRIMARY KEY,
-                            p50_latency   DOUBLE PRECISION,
-                            p95_latency   DOUBLE PRECISION,
-                            summary_json  JSONB
-                        );
-                        CREATE INDEX IF NOT EXISTS idx_eval_job_queue_status_created ON eval_job_queue (status, created_at);
-                        """
-                    )
-                conn.commit()
-            except Exception as exc:
-                if conn is not None and hasattr(conn, "rollback"):
-                    try:
-                        conn.rollback()
-                    except Exception:
-                        pass
-                logger.warning(f"PostgreSQL schema initialization skipped: {exc}")
-            finally:
-                if conn is not None and not getattr(conn, "closed", False):
-                    conn.close()
-
-    def execute_write(self, query: str, params: tuple[Any, ...]) -> None:
-        with self._lock:
-            conn = self.get_connection()
-            try:
-                with conn.cursor() as cur:
-                    cur.execute(query, params)
-                conn.commit()
-            except Exception:
-                if conn is not None and hasattr(conn, "rollback"):
-                    try:
-                        conn.rollback()
-                    except Exception:
-                        pass
-                raise
-            finally:
-                if conn is not None and not getattr(conn, "closed", False):
-                    conn.close()
-
-    def query_all(
-        self, query: str, params: tuple[Any, ...] = ()
-    ) -> list[dict[str, Any]]:
-        with self._lock:
-            conn = self.get_connection()
-            try:
-                from psycopg2.extras import RealDictCursor
-
-                with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                    cur.execute(query, params)
-                    rows = cur.fetchall()
-                    return [dict(row) for row in rows]
-            except Exception:
-                if conn is not None and hasattr(conn, "rollback"):
-                    try:
-                        conn.rollback()
-                    except Exception:
-                        pass
-                raise
-            finally:
-                if conn is not None and not getattr(conn, "closed", False):
-                    conn.close()
 
 
 def sanitize_config_dict(config_dict: dict[str, Any]) -> dict[str, Any]:
@@ -228,14 +44,15 @@ class PersistentJobQueue:
         """Evict completed/failed jobs from memory storage if exceeding maximum capacity."""
         if len(self._memory_jobs) <= self._max_memory_jobs:
             return
-        candidates = [
-            jid
-            for jid, jdata in self._memory_jobs.items()
-            if jdata.get("status") in ("completed", "failed")
-            and jid not in self._active_jobs
-        ]
-        for jid in candidates[: len(self._memory_jobs) - self._max_memory_jobs]:
-            self._memory_jobs.pop(jid, None)
+        with self._lock:
+            candidates = [
+                jid
+                for jid, jdata in list(self._memory_jobs.items())
+                if jdata.get("status") in ("completed", "failed")
+                and jid not in self._active_jobs
+            ]
+            for jid in candidates[: len(self._memory_jobs) - self._max_memory_jobs]:
+                self._memory_jobs.pop(jid, None)
 
     def set_task_executor(self, task_fn: Callable[[str, dict[str, Any]], None]) -> None:
         """Register the job execution function."""
@@ -252,7 +69,10 @@ class PersistentJobQueue:
                     max_workers=self.max_workers, thread_name_prefix="eval_worker"
                 )
             if self.db_manager.is_postgres():
-                self._recover_and_dispatch()
+                # Submit recovery to the thread pool so start() returns
+                # immediately and does not block the async event loop during
+                # uvicorn lifespan startup.
+                self._executor.submit(self._recover_and_dispatch)
 
     def stop(self) -> None:
         with self._lock:
@@ -281,14 +101,14 @@ class PersistentJobQueue:
         }
 
         if self.db_manager.is_postgres():
-            config_json = json.dumps(sanitized_config, ensure_ascii=False)
+            raw_config_json = json.dumps(config_dict, ensure_ascii=False)
             self.db_manager.execute_write(
                 "INSERT INTO eval_job_queue (job_id, eval_hash, status, config_json, created_at) VALUES (%s, %s, %s, %s, %s)",
-                (job_id, eval_hash, "pending", config_json, now),
+                (job_id, eval_hash, "pending", raw_config_json, now),
             )
         else:
             with self._lock:
-                self._memory_jobs[job_id] = job_record
+                self._memory_jobs[job_id] = {**job_record, "raw_config": config_dict}
                 self._memory_queue.append(job_id)
                 self._evict_old_memory_jobs()
 
@@ -358,7 +178,9 @@ class PersistentJobQueue:
                     "error": r.get("error"),
                 }
             except Exception as e:
-                logger.debug(f"Failed to query job '{job_id}' from Postgres: {e}")
+                logger.warning(
+                    f"Failed to query job '{job_id}' from Postgres, falling back to memory: {e}"
+                )
 
         with self._lock:
             j = self._memory_jobs.get(job_id)
@@ -392,15 +214,14 @@ class PersistentJobQueue:
                     )
                 return results
             except Exception as e:
-                logger.debug(f"Failed to list jobs from Postgres: {e}")
+                logger.warning(
+                    f"Failed to list jobs from Postgres, falling back to memory: {e}"
+                )
 
         with self._lock:
-            sorted_jobs = sorted(
-                [dict(j) for j in self._memory_jobs.values()],
-                key=lambda j: j["created_at"],
-                reverse=True,
-            )
-            return sorted_jobs[:limit]
+            recent_jobs = list(self._memory_jobs.values())
+            recent_jobs.sort(key=lambda j: j["created_at"], reverse=True)
+            return [dict(j) for j in recent_jobs[:limit]]
 
     def _recover_and_dispatch(self) -> None:
         """On startup, reset interrupted running jobs to pending and dispatch tasks."""
@@ -448,7 +269,9 @@ class PersistentJobQueue:
                             f"Failed to submit job {job_id} to worker pool: {exc}"
                         )
             except Exception as exc:
-                logger.debug(f"Failed to query pending jobs from Postgres: {exc}")
+                logger.error(
+                    f"Failed to query pending jobs from Postgres during dispatch: {exc}"
+                )
         else:
             with self._lock:
                 while self._memory_queue:
@@ -460,7 +283,9 @@ class PersistentJobQueue:
                     job_rec = self._memory_jobs.get(job_id)
                     if job_rec and job_rec["status"] == "pending":
                         self._active_jobs.add(job_id)
-                        cfg = job_rec.get("config_args", {})
+                        cfg = job_rec.get("raw_config") or job_rec.get(
+                            "config_args", {}
+                        )
                         try:
                             self._executor.submit(self._run_job_wrapper, job_id, cfg)
                         except Exception as exc:
