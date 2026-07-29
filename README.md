@@ -46,14 +46,14 @@ caipe_deepeval_evaluation/
 |   |-- eval_precomputed.sh
 |-- src/
 |   |-- deepeval_eval/
-|       |-- caipe_client.py
-|       |-- config.py
-|       |-- deepeval_evaluator.py
-|       |-- enterprise_dataset.py
-|       |-- hotpotqa_dataset.py
-|       |-- io_utils.py
-|       |-- llm_client.py
-|       |-- metrics.py
+|       |-- api/
+|       |-- clients/
+|       |-- core/
+|       |-- datasets/
+|       |-- engine/
+|       |-- ingest/
+|       |-- sinks/
+
 |-- docs/
     |-- architecture.md
     |-- evaluation_pipeline.md

@@ -54,20 +54,19 @@ flowchart LR
 
 | Component | File | Responsibility |
 | --- | --- | --- |
-| REST API Evaluation Service entry point | src/deepeval_eval/api.py | FastAPI REST API service with Swagger UI (/docs) for async job execution, deduplication, and DB persistence. |
-| Unified evaluator entry point | src/deepeval_eval/deepeval_evaluator.py | Unified CLI runner for benchmark evaluations. |
-| Ingestion entry point | src/deepeval_eval/ingest.py | Standalone CLI entry point for dataset ingestion into CAIPE datasources. |
-| Enterprise command entry point | src/deepeval_eval/enterprise_deepeval.py | CLI for EnterpriseRAG-Bench ingestion and evaluation. |
-| HotpotQA command entry point | src/deepeval_eval/hotpotqa_deepeval.py | CLI for HotpotQA ingestion and evaluation. |
-| Precomputed command entry point | src/deepeval_eval/precomputed_deepeval.py | CLI for offline precomputed evaluation runs. |
-| CAIPE client | src/deepeval_eval/caipe_client.py | Wraps rag-server REST calls and extracts retrieved contexts and source metadata. |
-| RAG client adapter | src/deepeval_eval/rag_client.py | Unified RAG client adapter for CAIPE and Agentic RAG endpoints. |
-| Precomputed RAG client | src/deepeval_eval/precomputed_client.py | Precomputed evaluation client handling offline or reference modes. |
-| Configuration | src/deepeval_eval/config.py | Defines default paths, environment loading, and LLM setting resolution. |
-| LLM adapter | src/deepeval_eval/llm_client.py | Calls an OpenAI compatible LLM endpoint and adapts it to DeepEval. |
-| Shared metrics | src/deepeval_eval/metrics.py | Builds DeepEval metrics and computes document ID and short answer checks. |
-| Enterprise dataset logic | src/deepeval_eval/enterprise_dataset.py | Downloads and samples EnterpriseRAG-Bench questions and source slices. |
-| HotpotQA dataset logic | src/deepeval_eval/hotpotqa_dataset.py | Reads preprocessed HotpotQA zip files and selects gold documents plus distractors. |
+| REST API Evaluation Service entry point | src/deepeval_eval/api/service.py | FastAPI REST API service with Swagger UI (/docs) for async job execution, deduplication, and DB persistence. |
+| Ingestion entry point | src/deepeval_eval/ingest/ingest_cli.py | Standalone CLI entry point for dataset ingestion into CAIPE datasources. |
+| Enterprise command entry point | src/deepeval_eval/ingest/enterprise_deepeval.py | CLI for EnterpriseRAG-Bench ingestion and evaluation. |
+| HotpotQA command entry point | src/deepeval_eval/ingest/hotpotqa_deepeval.py | CLI for HotpotQA ingestion and evaluation. |
+| CAIPE client | src/deepeval_eval/clients/caipe.py | Wraps rag-server REST calls and extracts retrieved contexts and source metadata. |
+| RAG client adapter | src/deepeval_eval/clients/rag.py | Unified RAG client adapter for CAIPE and Agentic RAG endpoints. |
+| Precomputed RAG client | src/deepeval_eval/clients/oracle.py | Precomputed evaluation client handling offline or reference modes. |
+| Configuration | src/deepeval_eval/core/config.py | Defines default paths, environment loading, and LLM setting resolution. |
+| LLM adapter | src/deepeval_eval/clients/llm_client.py | Calls an OpenAI compatible LLM endpoint and adapts it to DeepEval. |
+| Shared metrics | src/deepeval_eval/core/metrics.py | Builds DeepEval metrics and computes document ID and short answer checks. |
+| Enterprise dataset logic | src/deepeval_eval/datasets/enterprise.py | Downloads and samples EnterpriseRAG-Bench questions and source slices. |
+| HotpotQA dataset logic | src/deepeval_eval/datasets/hotpotqa.py | Reads preprocessed HotpotQA zip files and selects gold documents plus distractors. |
+
 | IO helpers | src/deepeval_eval/io_utils.py | Downloads cached files and reads generated JSONL question files. |
 
 ## CAIPE Interaction

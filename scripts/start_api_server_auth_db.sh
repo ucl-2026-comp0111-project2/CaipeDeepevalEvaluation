@@ -26,6 +26,19 @@ if [ -n "$KUBECONFIG" ] && [ -f "$KUBECONFIG" ]; then
   KUBECONFIG_ARG="--kubeconfig=$KUBECONFIG"
 fi
 
+# Retrieve Kubernetes CA/TLS certificate for Keycloak SSL verification
+if command -v kubectl >/dev/null 2>&1; then
+  if kubectl $KUBECONFIG_ARG get secret caipe-tls -n caipe >/dev/null 2>&1; then
+    kubectl $KUBECONFIG_ARG get secret caipe-tls -n caipe -o jsonpath='{.data.tls\.crt}' | base64 --decode > /tmp/caipe_tls.crt 2>/dev/null || true
+    if [ -s /tmp/caipe_tls.crt ]; then
+      export SSL_CERT_FILE=/tmp/caipe_tls.crt
+      export REQUESTS_CA_BUNDLE=/tmp/caipe_tls.crt
+      export OIDC_VERIFY_SSL=true
+      echo "caipe-tls certificate retrieved successfully from Kubernetes. Strict SSL verification enabled."
+    fi
+  fi
+fi
+
 # Retrieve and set DEEPEVAL_API_KEY from Kubernetes secret if not already set
 if [ -z "$DEEPEVAL_API_KEY" ] && command -v kubectl >/dev/null 2>&1; then
   if kubectl $KUBECONFIG_ARG get secret caipe-ui-secret -n caipe >/dev/null 2>&1; then
@@ -36,6 +49,19 @@ if [ -z "$DEEPEVAL_API_KEY" ] && command -v kubectl >/dev/null 2>&1; then
     if [ -n "$FETCHED_KEY" ]; then
       export DEEPEVAL_API_KEY="$FETCHED_KEY"
       echo "DEEPEVAL_API_KEY retrieved successfully from Kubernetes secret 'caipe-ui-secret'."
+    fi
+  fi
+fi
+
+# Retrieve and set CAIPE_CLIENT_ID and CAIPE_CLIENT_SECRET from Kubernetes secret if not set
+if [ -z "$CAIPE_CLIENT_ID" ] && command -v kubectl >/dev/null 2>&1; then
+  if kubectl $KUBECONFIG_ARG get secret caipe-ui-secret -n caipe >/dev/null 2>&1; then
+    FETCHED_CID=$(kubectl $KUBECONFIG_ARG get secret caipe-ui-secret -n caipe -o jsonpath='{.data.OIDC_CLIENT_ID}' | base64 --decode | tr -d '\r\n' 2>/dev/null || true)
+    FETCHED_CSEC=$(kubectl $KUBECONFIG_ARG get secret caipe-ui-secret -n caipe -o jsonpath='{.data.OIDC_CLIENT_SECRET}' | base64 --decode | tr -d '\r\n' 2>/dev/null || true)
+    if [ -n "$FETCHED_CID" ] && [ -n "$FETCHED_CSEC" ]; then
+      export CAIPE_CLIENT_ID="$FETCHED_CID"
+      export CAIPE_CLIENT_SECRET="$FETCHED_CSEC"
+      echo "CAIPE_CLIENT_ID & CAIPE_CLIENT_SECRET retrieved successfully from Kubernetes secret 'caipe-ui-secret'."
     fi
   fi
 fi
@@ -70,6 +96,9 @@ echo "  - ALLOW_UNAUTHENTICATED_ACCESS: ${ALLOW_UNAUTHENTICATED_ACCESS}"
 echo "  - CAIPE_UNSAFE_RBAC_BYPASS: ${CAIPE_UNSAFE_RBAC_BYPASS}"
 echo "  - OIDC_ISSUER: ${OIDC_ISSUER}"
 echo "  - OIDC_AUDIENCE: ${OIDC_AUDIENCE}"
+echo "  - OIDC_VERIFY_SSL: ${OIDC_VERIFY_SSL:-false}"
+echo "  - OPENAI_ENDPOINT: ${OPENAI_ENDPOINT}"
+echo "  - OPENAI_API_KEY: ${OPENAI_API_KEY:0:7}... (len=${#OPENAI_API_KEY})"
 if [ -n "$DEEPEVAL_API_KEY" ]; then
   echo "  - DEEPEVAL_API_KEY: [CONFIGURED - static API key validation enabled]"
 else

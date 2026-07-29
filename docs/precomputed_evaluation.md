@@ -40,7 +40,7 @@ flowchart TD
 ### How It Works
 
 1. **Oracle Query**: Constructs `reference_query = f"{question} {reference}".strip()` and sends it to CAIPE `/v1/query`. This is designed to retrieve the gold-standard documents by including the reference answer in the query.
-2. **Context Extraction**: Parses the response using `extract_contexts_and_sources()` from `caipe_client.py`.
+2. **Context Extraction**: Parses the response using `extract_contexts_and_sources()` from `deepeval_eval/clients/caipe.py`.
 3. **Answer Selection**:
      - If `answer_mode == "reference"`: Returns the benchmark reference answer directly (no LLM call).
      - If `answer_mode == "generate"`: Calls the LLM with the gold context to generate an answer.
@@ -48,8 +48,9 @@ flowchart TD
 ### Code Example
 
 ```python
-from deepeval_eval.precomputed_client import PrecomputedRagClient
-from deepeval_eval.caipe_client import build_caipe_client
+from deepeval_eval.clients.caipe import build_caipe_client
+from deepeval_eval.clients.oracle import PrecomputedRagClient
+
 
 env_values = {"CAIPE_BASE_URL": "http://localhost:9446"}
 caipe_client = build_caipe_client(env_values)
