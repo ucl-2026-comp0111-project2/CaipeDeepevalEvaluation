@@ -280,7 +280,7 @@ def test_database_result_sink_get_connection_positive():
         sink = PostgresResultSink("postgresql://user:pass@localhost:5432/db")
         sink._get_connection()
         mock_psycopg2.connect.assert_called_with(
-            "postgresql://user:pass@localhost:5432/db"
+            "postgresql://user:pass@localhost:5432/db", connect_timeout=5
         )
 
         mock_psycopg2.reset_mock()
@@ -304,6 +304,7 @@ def test_database_result_sink_get_connection_positive():
                 user="test_user",
                 password="test_password",
                 sslmode="prefer",
+                connect_timeout=5,
             )
 
 
@@ -406,3 +407,72 @@ def test_database_result_sink_save_execution_failure_negative(tmp_path: Path):
         sink = PostgresResultSink()
         sink.save(tmp_path, "prefix", [_mock_record()], 1.0, {})
         mock_conn.rollback.assert_called_once()
+
+
+def test_postgres_result_sink_explicit_connection_string():
+    """Verify explicit connection_string kwarg takes precedence."""
+    sink = PostgresResultSink(
+        connection_string="postgresql://user:pass@argshost:5432/argsdb",
+        auto_init=False,
+    )
+    assert sink.connection_string == "postgresql://user:pass@argshost:5432/argsdb"
+
+
+def test_postgres_result_sink_db_settings_connection_string():
+    """Verify db_settings connection_string is used when connection_string is None."""
+    from pydantic import SecretStr
+
+    from deepeval_eval.core.config import DatabaseSettings
+
+    db_settings = DatabaseSettings(
+        connection_string=SecretStr(
+            "postgresql://user:pass@settingshost:5432/settingsdb"
+        )
+    )
+    sink = PostgresResultSink(db_settings=db_settings, auto_init=False)
+    assert (
+        sink.connection_string == "postgresql://user:pass@settingshost:5432/settingsdb"
+    )
+
+
+def test_postgres_result_sink_explicit_overrides_db_settings():
+    """Verify explicit connection_string kwarg overrides db_settings."""
+    from pydantic import SecretStr
+
+    from deepeval_eval.core.config import DatabaseSettings
+
+    db_settings = DatabaseSettings(
+        connection_string=SecretStr(
+            "postgresql://user:pass@settingshost:5432/settingsdb"
+        )
+    )
+    sink = PostgresResultSink(
+        connection_string="postgresql://user:pass@overridehost:5432/overridedb",
+        db_settings=db_settings,
+        auto_init=False,
+    )
+    assert (
+        sink.connection_string == "postgresql://user:pass@overridehost:5432/overridedb"
+    )
+
+
+def test_postgres_result_sink_env_var_resolution():
+    """Verify environment variable POSTGRES_CONNECTION_STRING resolution."""
+    with patch.dict(
+        "os.environ",
+        {
+            "POSTGRES_CONNECTION_STRING": "postgresql://user:pass@envhost:5432/envdb",
+            "DATABASE_URL": "postgresql://user:pass@envhost:5432/envdb",
+        },
+    ):
+        sink = PostgresResultSink(auto_init=False)
+        assert sink.connection_string == "postgresql://user:pass@envhost:5432/envdb"
+
+
+def test_postgres_result_sink_db_manager_injection():
+    """Verify pre-constructed db_manager injection."""
+    mock_manager = MagicMock()
+    mock_manager.connection_string = "postgresql://user:pass@managerhost:5432/managerdb"
+    sink = PostgresResultSink(db_manager=mock_manager, auto_init=False)
+    assert sink.db_manager is mock_manager
+    assert sink.connection_string == "postgresql://user:pass@managerhost:5432/managerdb"

@@ -4,9 +4,14 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
+
+from deepeval_eval.db import DatabaseManager
+
+if TYPE_CHECKING:
+    from deepeval_eval.core.config import DatabaseSettings
 
 logger = logging.getLogger(__name__)
 
@@ -51,13 +56,30 @@ class PostgresResultSink:
 
     def __init__(
         self,
-        connection_string: str | None = None,
+        connection_string: str | Any | None = None,
+        db_settings: DatabaseSettings | None = None,
         auto_init: bool = True,
+        db_manager: DatabaseManager | Any | None = None,
     ):
-        from deepeval_eval.api.job_queue import DatabaseManager
-
-        self.connection_string = connection_string
-        self.db_manager = DatabaseManager(connection_string=connection_string)
+        if db_manager is not None:
+            self.db_manager = db_manager
+        else:
+            conn_str = connection_string
+            if (
+                conn_str is None
+                and db_settings is not None
+                and db_settings.connection_string
+            ):
+                raw_conn = db_settings.connection_string
+                conn_str = (
+                    raw_conn.get_secret_value()
+                    if isinstance(raw_conn, SecretStr)
+                    else (str(raw_conn) if raw_conn is not None else None)
+                )
+            self.db_manager = DatabaseManager(
+                connection_string=conn_str, db_settings=db_settings
+            )
+        self.connection_string = self.db_manager.connection_string
         if auto_init and self.db_manager.is_postgres():
             try:
                 self.init_db()
@@ -76,11 +98,7 @@ class PostgresResultSink:
             return []
 
         try:
-            import psycopg2
             from psycopg2.extras import RealDictCursor
-
-            if psycopg2 is None:
-                return []
         except (ImportError, ModuleNotFoundError):
             logger.warning("psycopg2 is not installed; skipping database query.")
             return []
@@ -259,40 +277,30 @@ class PostgresResultSink:
                 ]
                 p50_latency, p95_latency = calculate_latency_percentiles(latencies)
                 all_metric_averages = compute_all_metric_averages(results)
-                rag_prompt_tokens = sum(
-                    r.get("prompt_tokens") or r.get("input_tokens") or 0
-                    for r in results
-                )
-                rag_completion_tokens = sum(
-                    r.get("completion_tokens")
-                    or r.get("output_tokens")
-                    or r.get("generation_tokens")
-                    or 0
-                    for r in results
-                )
-                rag_total_tokens = sum(
-                    r.get("total_tokens")
-                    or (
-                        (r.get("prompt_tokens") or r.get("input_tokens") or 0)
-                        + (
-                            r.get("completion_tokens")
-                            or r.get("output_tokens")
-                            or r.get("generation_tokens")
-                            or 0
-                        )
+
+                rag_prompt_tokens = 0
+                rag_completion_tokens = 0
+                evaluator_prompt_tokens = 0
+                evaluator_completion_tokens = 0
+
+                for r in results:
+                    p_tok = r.get("prompt_tokens") or r.get("input_tokens") or 0
+                    c_tok = (
+                        r.get("completion_tokens")
+                        or r.get("output_tokens")
+                        or r.get("generation_tokens")
+                        or 0
                     )
-                    for r in results
-                )
-                failure_counts = categorize_failure_causes(results)
-                evaluator_prompt_tokens = sum(
-                    r.get("evaluator_input_tokens", 0) for r in results
-                )
-                evaluator_completion_tokens = sum(
-                    r.get("evaluator_output_tokens", 0) for r in results
-                )
+                    rag_prompt_tokens += p_tok
+                    rag_completion_tokens += c_tok
+                    evaluator_prompt_tokens += r.get("evaluator_input_tokens", 0)
+                    evaluator_completion_tokens += r.get("evaluator_output_tokens", 0)
+
+                rag_total_tokens = rag_prompt_tokens + rag_completion_tokens
                 evaluator_total_tokens = (
                     evaluator_prompt_tokens + evaluator_completion_tokens
                 )
+                failure_counts = categorize_failure_causes(results)
 
                 serializable_config = {}
                 for k, v in config_args.items():
