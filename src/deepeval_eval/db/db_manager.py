@@ -47,6 +47,12 @@ class DatabaseManager:
                 )
 
     @property
+    def db_settings(self) -> DatabaseSettings:
+        if getattr(self, "_db_settings", None) is not None:
+            return self._db_settings
+        return DatabaseSettings()
+
+    @property
     def connection_string(self) -> str | None:
         if (
             getattr(self, "_explicit_connection_string", None)
@@ -54,7 +60,7 @@ class DatabaseManager:
         ):
             return self._explicit_connection_string
 
-        settings = getattr(self, "_db_settings", None) or DatabaseSettings()
+        settings = self.db_settings
         conn = (
             settings.connection_string.get_secret_value()
             if isinstance(settings.connection_string, SecretStr)
@@ -70,8 +76,7 @@ class DatabaseManager:
 
     @property
     def postgres_host(self) -> str | None:
-        settings = getattr(self, "_db_settings", None) or DatabaseSettings()
-        return settings.postgres_host
+        return self.db_settings.postgres_host
 
     def is_postgres(self) -> bool:
         conn_str = self.connection_string
@@ -93,7 +98,7 @@ class DatabaseManager:
         if conn_str:
             return psycopg2.connect(conn_str, connect_timeout=5)
 
-        settings = getattr(self, "_db_settings", None) or DatabaseSettings()
+        settings = self.db_settings
         return psycopg2.connect(
             host=settings.postgres_host or "localhost",
             port=settings.postgres_port,

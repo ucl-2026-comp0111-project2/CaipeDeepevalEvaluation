@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import logging
 import time
 from typing import Any
@@ -7,9 +8,7 @@ from typing import Any
 from deepeval_eval.api.telemetry import trace_evaluation_span
 from deepeval_eval.clients.llm import DeepEvalJudge, OpenAICompatibleClient
 from deepeval_eval.core.config import (
-    EvalConfig as EvalConfig,
-)
-from deepeval_eval.core.config import (
+    EvalConfig,
     ensure_dirs,
 )
 from deepeval_eval.core.io_utils import sanitize_path
@@ -153,6 +152,17 @@ def run_evaluation(
     results: list[dict[str, Any]] = []
     start_eval_time = time.time()
 
+    metric_accepts_indicator: dict[int, bool] = {}
+    for metric in metrics:
+        try:
+            sig = inspect.signature(metric.measure)
+            metric_accepts_indicator[id(metric)] = (
+                "_show_indicator" in sig.parameters
+                or any(p.kind == p.VAR_KEYWORD for p in sig.parameters.values())
+            )
+        except Exception:
+            metric_accepts_indicator[id(metric)] = False
+
     for idx, row in enumerate(rows, start=1):
         question = row["user_input"]
         reference = row.get("reference") or ""
@@ -199,9 +209,9 @@ def run_evaluation(
                 f"[eval_engine] Executing metric '{metric_name}' for question {idx}/{len(rows)}"
             )
             try:
-                try:
+                if metric_accepts_indicator.get(id(metric), False):
                     metric.measure(test_case, _show_indicator=show_indicator)
-                except TypeError:
+                else:
                     metric.measure(test_case)
                 reason = getattr(metric, "reason", None)
                 if reason is None:

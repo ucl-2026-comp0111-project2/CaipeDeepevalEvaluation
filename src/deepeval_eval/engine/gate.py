@@ -45,6 +45,9 @@ def load_thresholds(path: Path) -> dict[str, Any]:
 
         data = yaml.safe_load(text)
     except ModuleNotFoundError:
+        logger.warning(
+            "PyYAML not available; falling back to parsing gate thresholds as JSON."
+        )
         data = json.loads(text)
     if not isinstance(data, dict):
         raise ValueError(
