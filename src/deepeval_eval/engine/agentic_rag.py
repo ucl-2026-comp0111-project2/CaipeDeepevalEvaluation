@@ -468,13 +468,7 @@ class AgenticRetriever(BaseRetriever):
                 self.last_answer = ""
 
                 # Resolve trace_log
-                should_trace = trace_log
-                if should_trace is None:
-                    should_trace = self.trace_log
-                if not should_trace:
-                    env_val = os.getenv("CAIPE_TRACE_LOG")
-                    if env_val is not None:
-                        should_trace = env_val.lower() in ("true", "1", "yes")
+                should_trace = trace_log if trace_log is not None else self.trace_log
 
                 log_file = None
                 if should_trace and run_id:
@@ -551,6 +545,35 @@ class AgenticRetriever(BaseRetriever):
                                             raw_contexts.extend(
                                                 _parse_rag_context_artifact(tool_result)
                                             )
+
+                                    # Capture token usage metadata from SSE stream event payloads
+                                    extracted_usage = None
+                                    if isinstance(data_json, dict):
+                                        if "usage_metadata" in data_json and isinstance(
+                                            data_json["usage_metadata"], dict
+                                        ):
+                                            extracted_usage = data_json[
+                                                "usage_metadata"
+                                            ]
+                                        elif "usage" in data_json and isinstance(
+                                            data_json["usage"], dict
+                                        ):
+                                            extracted_usage = data_json["usage"]
+                                        elif "metadata" in data_json and isinstance(
+                                            data_json["metadata"], dict
+                                        ):
+                                            extracted_usage = data_json["metadata"].get(
+                                                "usage_metadata"
+                                            ) or data_json["metadata"].get("usage")
+
+                                    if isinstance(extracted_usage, dict):
+                                        if self.last_raw_response is None:
+                                            self.last_raw_response = {}
+                                        if isinstance(self.last_raw_response, dict):
+                                            self.last_raw_response.setdefault(
+                                                "metadata", {}
+                                            )["usage_metadata"] = extracted_usage
+
                     return raw_contexts
 
                 finally:
@@ -621,7 +644,10 @@ class AgenticRetriever(BaseRetriever):
             raw_contexts = self._query_gateway(
                 enriched_query, k=k, run_id=run_id, trace_log=trace_log
             )
-            self.last_raw_response = {"result": {"artifacts": []}}
+            if self.last_raw_response is None:
+                self.last_raw_response = {"result": {"artifacts": []}}
+            elif isinstance(self.last_raw_response, dict):
+                self.last_raw_response.setdefault("result", {})["artifacts"] = []
         else:
             body = self._call_supervisor(enriched_query)
             if not body:
@@ -688,9 +714,23 @@ class AgenticRetriever(BaseRetriever):
                             if usage_meta:
                                 break
                 if isinstance(usage_meta, dict):
-                    input_tokens = usage_meta.get("input_tokens", 0)
-                    output_tokens = usage_meta.get("output_tokens", 0)
-                    total_tokens = usage_meta.get("total_tokens", 0)
+                    input_tokens = (
+                        usage_meta.get("input_tokens")
+                        or usage_meta.get("prompt_tokens")
+                        or usage_meta.get("input_token_count")
+                        or 0
+                    )
+                    output_tokens = (
+                        usage_meta.get("output_tokens")
+                        or usage_meta.get("completion_tokens")
+                        or usage_meta.get("output_token_count")
+                        or 0
+                    )
+                    total_tokens = (
+                        usage_meta.get("total_tokens")
+                        or usage_meta.get("total_token_count")
+                        or (input_tokens + output_tokens)
+                    )
 
             return AgenticRAGResult(
                 answer=self.last_answer,
@@ -837,10 +877,27 @@ class AgenticRAG(BaseRAG):
                             if usage_meta:
                                 break
                 if isinstance(usage_meta, dict):
+                    in_tok = (
+                        usage_meta.get("input_tokens")
+                        or usage_meta.get("prompt_tokens")
+                        or usage_meta.get("input_token_count")
+                        or 0
+                    )
+                    out_tok = (
+                        usage_meta.get("output_tokens")
+                        or usage_meta.get("completion_tokens")
+                        or usage_meta.get("output_token_count")
+                        or 0
+                    )
+                    tot_tok = (
+                        usage_meta.get("total_tokens")
+                        or usage_meta.get("total_token_count")
+                        or (in_tok + out_tok)
+                    )
                     usage = {
-                        "prompt_tokens": usage_meta.get("input_tokens", 0),
-                        "completion_tokens": usage_meta.get("output_tokens", 0),
-                        "total_tokens": usage_meta.get("total_tokens", 0),
+                        "prompt_tokens": in_tok,
+                        "completion_tokens": out_tok,
+                        "total_tokens": tot_tok,
                     }
 
             if not retrieved_docs and answer:
@@ -880,13 +937,12 @@ class AgenticRAG(BaseRAG):
             )
 
             agentic_log_path = None
-            should_trace = trace_log
-            if should_trace is None:
-                should_trace = self._agentic_retriever.trace_log
-            if not should_trace:
-                env_val = os.getenv("CAIPE_TRACE_LOG")
-                if env_val is not None:
-                    should_trace = env_val.lower() in ("true", "1", "yes")
+            # Resolve trace_log (Precedence: arg flags > env var > config file > default)
+            should_trace = (
+                trace_log
+                if trace_log is not None
+                else self._agentic_retriever.trace_log
+            )
 
             if should_trace:
                 agentic_log_path = os.path.join(

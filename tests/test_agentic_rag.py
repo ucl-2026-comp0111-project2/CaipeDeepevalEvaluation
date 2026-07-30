@@ -310,6 +310,38 @@ def test_agentic_rag_usage_artifacts_parsing() -> None:
         assert res["usage"]["total_tokens"] == 15
 
 
+def test_agentic_rag_usage_prompt_tokens_fallback() -> None:
+    from deepeval_eval.engine.agentic_rag import AgenticRAG
+
+    rag = AgenticRAG(agent_api_url="http://localhost:8000")
+    rag._agentic_retriever.last_answer = "Ans"
+    rag._agentic_retriever.documents = ["Doc"]
+    rag._agentic_retriever.documents_metadata = [{"doc_id": "d1"}]
+    rag._agentic_retriever.last_raw_response = {
+        "metadata": {
+            "usage_metadata": {
+                "prompt_tokens": 20,
+                "completion_tokens": 10,
+                "total_tokens": 30,
+            }
+        }
+    }
+    with mock.patch.object(
+        rag._agentic_retriever, "get_top_k", return_value=[(0, 0.9)]
+    ):
+        res = rag.query("Q?", run_id="r1")
+        assert res["usage"]["prompt_tokens"] == 20
+        assert res["usage"]["completion_tokens"] == 10
+        assert res["usage"]["total_tokens"] == 30
+
+    ret = rag._agentic_retriever
+    with mock.patch.object(ret, "get_top_k", return_value=[(0, 0.9)]):
+        res_ret = ret.retrieve("Q?")
+        assert res_ret.input_tokens == 20
+        assert res_ret.output_tokens == 10
+        assert res_ret.total_tokens == 30
+
+
 def test_agentic_retriever_error_fallback() -> None:
     from deepeval_eval.engine.agentic_rag import AgenticRetriever
 
@@ -607,3 +639,33 @@ def test_agentic_retriever_retry_success(
     assert ret.last_answer == "hello on retry"
     assert mock_post.call_count == 2
     assert mock_sleep.call_count == 1
+
+
+@mock.patch("httpx.stream")
+@mock.patch("httpx.post")
+@mock.patch.object(AgenticRetriever, "_get_oidc_token", return_value="fake-token")
+def test_agentic_retriever_preserves_sse_usage_metadata(
+    mock_get_token, mock_post, mock_stream
+):
+    mock_conv_resp = mock.Mock()
+    mock_conv_resp.status_code = 201
+    mock_conv_resp.json.return_value = {"data": {"conversation": {"_id": "conv-789"}}}
+    mock_post.return_value = mock_conv_resp
+
+    mock_stream_resp = mock.MagicMock()
+    mock_stream_resp.status_code = 200
+    mock_stream_resp.iter_lines.return_value = [
+        "event: content",
+        'data: {"text": "Answer text"}',
+        "event: done",
+        'data: {"usage_metadata": {"prompt_tokens": 15646, "completion_tokens": 125, "total_tokens": 15771}}',
+    ]
+    mock_stream.return_value.__enter__.return_value = mock_stream_resp
+
+    ret = AgenticRetriever(agent_api_url="https://gateway.service", use_a2a=False)
+    result = ret.retrieve("test question", k=1)
+
+    assert result.answer == "Answer text"
+    assert result.input_tokens == 15646
+    assert result.output_tokens == 125
+    assert result.total_tokens == 15771

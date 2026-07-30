@@ -25,7 +25,7 @@ class RagQueryResult:
     retrieved_doc_ids: list[str]
     latency_sec: float = 0.0
     latency_ms: float = 0.0
-    log_file: str = " "
+    log_file: str = ""
     input_tokens: int = 0
     output_tokens: int = 0
     total_tokens: int = 0
@@ -56,6 +56,7 @@ class AgenticRagAdapter(BaseRagClient):
         datasource_id: str | None = None,
         agent_id: str | None = None,
         insecure: bool | None = None,
+        trace_log: bool | None = None,
         agentic_settings: Any | None = None,
     ) -> None:
         from deepeval_eval.core.config import AgenticSettings
@@ -74,15 +75,17 @@ class AgenticRagAdapter(BaseRagClient):
         self.agent_id = agent_id
 
         resolved_supervisor_url = supervisor_url or settings.supervisor_url
+        resolved_trace_log = trace_log if trace_log is not None else settings.trace_log
         retriever_kwargs: dict[str, Any] = {
             "supervisor_url": resolved_supervisor_url,
             "timeout": settings.timeout,
             "logdir": logdir,
-            "fail_on_error": fail_on_error
-            if fail_on_error is not None
-            else settings.fail_on_error,
+            "fail_on_error": (
+                fail_on_error if fail_on_error is not None else settings.fail_on_error
+            ),
             "datasource_id": datasource_id,
             "agent_id": agent_id,
+            "trace_log": resolved_trace_log,
         }
         if insecure is not None:
             retriever_kwargs["insecure"] = insecure
@@ -117,6 +120,7 @@ class AgenticRagAdapter(BaseRagClient):
             sources.append({"document_id": doc_id})
 
         latency_sec = agentic_result.latency_ms / 1000.0 if agentic_result else 0.0
+        # TODO: Change the hardcoded log file path
         log_file_val = (
             f"logs/query_trace_{agentic_result.task_id}.json" if agentic_result else " "
         )
@@ -132,9 +136,9 @@ class AgenticRagAdapter(BaseRagClient):
             sources=sources,
             retrieved_doc_ids=retrieved_ids,
             latency_sec=latency_sec,
-            latency_ms=agentic_result.latency_ms
-            if agentic_result
-            else (latency_sec * 1000.0),
+            latency_ms=(
+                agentic_result.latency_ms if agentic_result else (latency_sec * 1000.0)
+            ),
             log_file=log_file_val,
             input_tokens=agentic_result.input_tokens if agentic_result else 0,
             output_tokens=agentic_result.output_tokens if agentic_result else 0,
