@@ -7,7 +7,6 @@ and FastAPI route protection. Compatible with CAIPE RAG server auth architecture
 from __future__ import annotations
 
 import logging
-import os
 import secrets
 import time
 from typing import Any
@@ -53,7 +52,7 @@ class UserContext(BaseModel):
     client_id: str | None = None
 
 
-def allow_unauthenticated_access() -> bool:
+def allow_unauthenticated_access(settings: AuthSettings | None = None) -> bool:
     """Check if unauthenticated access is allowed for local dev/testing."""
     if MONOREPO_AUTH_AVAILABLE and caipe_rbac_bypass_enabled:
         try:
@@ -62,19 +61,8 @@ def allow_unauthenticated_access() -> bool:
         except Exception:
             pass
 
-    # If any environment variable enables bypass, return True
-    for env_var in ("ALLOW_UNAUTHENTICATED_ACCESS", "CAIPE_UNSAFE_RBAC_BYPASS"):
-        val = os.environ.get(env_var)
-        if val is not None and str(val).strip().lower() in ("true", "1", "yes", "on"):
-            return True
-
-    # If any environment variable explicitly disables bypass, return False
-    for env_var in ("ALLOW_UNAUTHENTICATED_ACCESS", "CAIPE_UNSAFE_RBAC_BYPASS"):
-        val = os.environ.get(env_var)
-        if val is not None and str(val).strip().lower() in ("false", "0", "no", "off"):
-            return False
-
-    return False
+    auth_settings = settings or AuthSettings()
+    return auth_settings.allow_unauthenticated_access
 
 
 class OIDCProvider:
@@ -87,6 +75,8 @@ class OIDCProvider:
         name: str = "default",
         discovery_url: str | None = None,
         jwks_url: str | None = None,
+        verify_ssl: bool = True,
+        strict_claims: bool = False,
     ):
         self.issuer = issuer.rstrip("/") if issuer else ""
         self.audience = audience
@@ -96,25 +86,20 @@ class OIDCProvider:
         self.jwks_cache: dict[str, Any] = {}
         self.jwks_cache_time: float = 0.0
         self.jwks_cache_ttl: int = 3600
+        self.verify_ssl = verify_ssl
+        self.strict_claims = strict_claims
 
     async def get_jwks(self) -> dict[str, Any]:
         now = time.time()
         if self.jwks_cache and (now - self.jwks_cache_time) < self.jwks_cache_ttl:
             return self.jwks_cache
 
-        verify_ssl = os.environ.get("OIDC_VERIFY_SSL", "false").lower() in (
-            "true",
-            "1",
-            "yes",
-            "on",
-        )
-
         if not self.jwks_uri:
             disc_url = (
                 self.discovery_url or f"{self.issuer}/.well-known/openid-configuration"
             )
             async with httpx.AsyncClient(
-                timeout=10.0, follow_redirects=True, verify=verify_ssl
+                timeout=10.0, follow_redirects=True, verify=self.verify_ssl
             ) as client:
                 resp = await client.get(disc_url)
                 resp.raise_for_status()
@@ -125,7 +110,7 @@ class OIDCProvider:
             raise ValueError(f"Could not determine JWKS URI for provider '{self.name}'")
 
         async with httpx.AsyncClient(
-            timeout=10.0, follow_redirects=True, verify=verify_ssl
+            timeout=10.0, follow_redirects=True, verify=self.verify_ssl
         ) as client:
             resp = await client.get(self.jwks_uri)
             resp.raise_for_status()
@@ -155,8 +140,11 @@ class OIDCProvider:
                 options={"verify_signature": True, "verify_exp": True},
             )
         except jwt.PyJWTError as err:
+            if self.strict_claims:
+                logger.error(f"Strict OIDC JWT validation failed: {err}")
+                raise err
             logger.debug(
-                f"Strict JWT claims check failed ({err}); retrying with signature and expiration verification"
+                f"Strict JWT claims check failed ({err}); retrying with signature and expiration verification for Keycloak compatibility"
             )
             claims = jwt.decode(
                 token,
@@ -194,6 +182,8 @@ class AuthManager:
                 audience=audience,
                 discovery_url=self.settings.oidc_discovery_url,
                 jwks_url=self.settings.oidc_jwks_url,
+                verify_ssl=self.settings.oidc_verify_ssl,
+                strict_claims=self.settings.oidc_strict_claims,
             )
 
     async def validate_token(self, token: str) -> UserContext:
@@ -284,7 +274,12 @@ async def require_authenticated_user(
                 detail=f"Invalid authentication token: {exc}",
             )
 
-    if allow_unauthenticated_access():
+    settings = (
+        auth_manager.settings
+        if hasattr(auth_manager, "settings")
+        else None
+    )
+    if allow_unauthenticated_access(settings):
         return UserContext(
             subject="anonymous-local-dev",
             email="anonymous@local",

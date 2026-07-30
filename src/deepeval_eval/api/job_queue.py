@@ -16,11 +16,17 @@ logger = logging.getLogger(__name__)
 
 
 def sanitize_config_dict(config_dict: dict[str, Any]) -> dict[str, Any]:
-    """Redact sensitive credentials before storing or returning job configuration dicts."""
-    sanitized = dict(config_dict)
-    for key in ("llm_api_key", "auth_token", "rag_auth_token", "api_key", "password"):
-        if key in sanitized:
-            sanitized[key] = "***REDACTED***"
+    """Clean job configuration dictionary by omitting secret credential keys and None values."""
+    sanitized = {}
+    for k, v in config_dict.items():
+        k_lower = k.lower()
+        if v is None:
+            continue
+        if any(
+            sens in k_lower for sens in ("key", "secret", "token", "password", "dsn")
+        ):
+            continue
+        sanitized[k] = v
     return sanitized
 
 
@@ -101,14 +107,17 @@ class PersistentJobQueue:
         }
 
         if self.db_manager.is_postgres():
-            raw_config_json = json.dumps(config_dict, ensure_ascii=False)
+            raw_config_json = json.dumps(sanitized_config, ensure_ascii=False)
             self.db_manager.execute_write(
                 "INSERT INTO eval_job_queue (job_id, eval_hash, status, config_json, created_at) VALUES (%s, %s, %s, %s, %s)",
                 (job_id, eval_hash, "pending", raw_config_json, now),
             )
         else:
             with self._lock:
-                self._memory_jobs[job_id] = {**job_record, "raw_config": config_dict}
+                self._memory_jobs[job_id] = {
+                    **job_record,
+                    "raw_config": sanitized_config,
+                }
                 self._memory_queue.append(job_id)
                 self._evict_old_memory_jobs()
 
@@ -171,7 +180,7 @@ class PersistentJobQueue:
                     "job_id": r["job_id"],
                     "eval_hash": r["eval_hash"],
                     "status": r["status"],
-                    "config_args": cfg,
+                    "config_args": sanitize_config_dict(cfg),
                     "created_at": r["created_at"],
                     "started_at": r.get("started_at"),
                     "completed_at": r.get("completed_at"),
@@ -205,7 +214,7 @@ class PersistentJobQueue:
                             "job_id": r["job_id"],
                             "eval_hash": r["eval_hash"],
                             "status": r["status"],
-                            "config_args": cfg,
+                            "config_args": sanitize_config_dict(cfg),
                             "created_at": r["created_at"],
                             "started_at": r.get("started_at"),
                             "completed_at": r.get("completed_at"),
@@ -247,7 +256,7 @@ class PersistentJobQueue:
         if self.db_manager.is_postgres():
             try:
                 rows = self.db_manager.query_all(
-                    "SELECT job_id, config_json FROM eval_job_queue WHERE status='pending' ORDER BY created_at ASC LIMIT %s",
+                    "SELECT job_id, config_json FROM eval_job_queue WHERE status='pending' ORDER BY created_at ASC LIMIT %s FOR UPDATE SKIP LOCKED",
                     (available_slots,),
                 )
                 for r in rows:
@@ -298,9 +307,29 @@ class PersistentJobQueue:
         if not self._task_fn:
             return
         self.update_status(job_id, "running")
+
+        # 1. Filter out any sensitive keys and redacted values pulled from DB config_json
+        clean_config = sanitize_config_dict(config_dict)
+
         try:
-            self._task_fn(job_id, config_dict)
+            # 2. Execute task. Downstream clients (e.g. OpenAICompatibleClient / EvalConfig)
+            # will automatically pull live keys from environment defaults.
+            self._task_fn(job_id, clean_config)
             self.update_status(job_id, "completed")
         except Exception as exc:
             logger.error(f"Execution of job '{job_id}' failed: {exc}", exc_info=True)
             self.update_status(job_id, "failed", error=str(exc))
+
+    def delete_job(self, job_id: str) -> None:
+        """Delete a job from queue database and memory (used for test teardown and cleanup)."""
+        if self.db_manager.is_postgres():
+            try:
+                self.db_manager.execute_write(
+                    "DELETE FROM eval_job_queue WHERE job_id=%s",
+                    (job_id,),
+                )
+            except Exception as e:
+                logger.warning(f"Failed to delete job '{job_id}' from Postgres: {e}")
+        with self._lock:
+            self._memory_jobs.pop(job_id, None)
+            self._active_jobs.discard(job_id)

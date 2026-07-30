@@ -42,11 +42,12 @@ from deepeval_eval.core.config import (
     DEFAULT_DATA_DIR,
     DEFAULT_GATE_CONFIG,
     DEFAULT_RESULTS_DIR,
+    EvalConfig,
+    get_eval_config,
 )
 from deepeval_eval.core.io_utils import sanitize_path
 from deepeval_eval.core.prompt_style import DEFAULT_PROMPT_STYLE
 from deepeval_eval.engine.eval_engine import (
-    EvalConfig,
     _build_rag_client,
     run_evaluation,
 )
@@ -55,12 +56,11 @@ from deepeval_eval.sinks.file_sink import format_results_as_csv
 
 logger = logging.getLogger(__name__)
 
-# Server-level configuration read from environment at startup
-_env_prompt_config = os.environ.get("DEEPEVAL_PROMPT_CONFIG") or os.environ.get(
-    "PROMPT_CONFIG"
-)
+# Server-level configuration read from EvalConfig singleton at startup
 SERVER_PROMPT_CONFIG: Path | None = (
-    Path(_env_prompt_config).resolve() if _env_prompt_config else None
+    get_eval_config().prompt_config.resolve()
+    if get_eval_config().prompt_config
+    else None
 )
 
 # ---------------------------------------------------------------------------
@@ -115,6 +115,10 @@ class EvaluationRequest(BaseModel):
     agentic: bool = Field(
         default=False, description="Route queries through CAIPE supervisor A2A endpoint"
     )
+    trace_log: bool = Field(
+        default=False,
+        description="Save detailed agentic stream and query trace logs to disk",
+    )
     agent_id: str | None = Field(
         default=None,
         description="Optional CAIPE agent ID for agentic RAG evaluations",
@@ -133,9 +137,6 @@ class EvaluationRequest(BaseModel):
     force_rerun: bool = Field(
         default=False,
         description="Bypass evaluation deduplication cache and force rerun",
-    )
-    questions_file: str | None = Field(
-        default=None, description="Path to custom evaluation questions file"
     )
     question_ids: list[str] | None = Field(
         default=None, description="List of specific question IDs to evaluate"
@@ -197,15 +198,22 @@ class EvaluationSummaryResponse(BaseModel):
 
 
 def validate_safe_path(user_path: str | Path | None) -> Path | None:
-    """Validate that server temporary files reside within the system temporary directory."""
+    """Validate that specified file path resides strictly within approved sandbox directories."""
     if not user_path:
         return None
     path_obj = Path(user_path).expanduser().resolve()
-    temp_dir = Path(tempfile.gettempdir()).resolve()
-    if path_obj != temp_dir and temp_dir not in path_obj.parents:
+    allowed_roots = [
+        Path(tempfile.gettempdir()).resolve(),
+        DEFAULT_DATA_DIR.resolve(),
+        (DEFAULT_DATA_DIR.parent / "evals").resolve(),
+    ]
+    is_safe = any(
+        path_obj == root or root in path_obj.parents for root in allowed_roots
+    )
+    if not is_safe:
         raise HTTPException(
             status_code=400,
-            detail=f"Access to file path '{user_path}' is restricted for security.",
+            detail=f"Access to file path '{user_path}' is restricted: path is outside allowed sandbox directories.",
         )
     return path_obj
 
@@ -629,7 +637,7 @@ def execute_evaluation_job(
     start_time = time.time()
 
     try:
-        raw_qfile = req.questions_file or temp_file_path
+        raw_qfile = getattr(req, "questions_file", None) or temp_file_path
         q_file = validate_safe_path(raw_qfile) if raw_qfile else None
         p_config = SERVER_PROMPT_CONFIG
         results_dir = DEFAULT_RESULTS_DIR
@@ -662,6 +670,7 @@ def execute_evaluation_job(
             llm_api_key=req.llm_api_key,
             llm_model=req.llm_model,
             agentic=req.agentic,
+            trace_log=req.trace_log,
             agent_id=req.agent_id,
             supervisor_url=req.supervisor_url,
             fail_on_error=req.fail_on_error,
@@ -903,6 +912,7 @@ async def submit_eval_job_with_upload(
     )
     file_hash = hashlib.sha256(file_bytes).hexdigest()[:16]
     temp_file_path = os.path.join(temp_dir, f"upload_{file_hash}{ext}")
+    validate_safe_path(temp_file_path)
     with open(temp_file_path, "wb") as f:
         f.write(file_bytes)
 
@@ -910,7 +920,6 @@ async def submit_eval_job_with_upload(
         dataset_name=dataset_name,
         answer_mode=answer_mode,
         datasource_id=datasource_id,
-        questions_file=temp_file_path,
         max_items=max_items,
         limit_per_category=limit_per_category,
         top_k=top_k,
@@ -922,6 +931,7 @@ async def submit_eval_job_with_upload(
         oracle_testing=oracle_testing,
     )
     config_dict = req.model_dump()
+    config_dict["questions_file"] = temp_file_path
     eval_hash = compute_eval_hash(config_dict, dataset_bytes=file_bytes)
 
     job = job_manager.create_job(

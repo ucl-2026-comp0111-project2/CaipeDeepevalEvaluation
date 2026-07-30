@@ -133,9 +133,9 @@ def test_sanitize_config_dict_redacts_secrets(
         "rag_auth_token": "rag-secret",
     }
     job = queue.enqueue("job-sec-1", "hashsec", raw_config)
-    assert job["config_args"]["llm_api_key"] == "***REDACTED***"
-    assert job["config_args"]["auth_token"] == "***REDACTED***"
-    assert job["config_args"]["rag_auth_token"] == "***REDACTED***"
+    assert "llm_api_key" not in job["config_args"]
+    assert "auth_token" not in job["config_args"]
+    assert "rag_auth_token" not in job["config_args"]
     assert job["config_args"]["dataset_name"] == "test_secret"
 
 

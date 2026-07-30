@@ -902,7 +902,6 @@ def test_execute_evaluation_job_handles_upload_json_file(
 
     req = EvaluationRequest(
         dataset_name="custom_upload",
-        questions_file=str(q_file),
         question_ids=["q1", "q2"],
         question_indices=[1, 2],
         save_to_db=False,

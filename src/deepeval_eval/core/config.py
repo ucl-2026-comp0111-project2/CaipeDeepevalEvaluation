@@ -181,6 +181,26 @@ class DatabaseSettings(BaseSettings):
         default=None,
         validation_alias=AliasChoices("POSTGRES_HOST", "PGHOST", "DB_HOST"),
     )
+    postgres_port: str = Field(
+        default="5432",
+        validation_alias=AliasChoices("POSTGRES_PORT", "PGPORT", "DB_PORT"),
+    )
+    postgres_db: str = Field(
+        default="caipe_eval",
+        validation_alias=AliasChoices("POSTGRES_DB", "PGDATABASE", "DB_NAME"),
+    )
+    postgres_user: str = Field(
+        default="postgres",
+        validation_alias=AliasChoices("POSTGRES_USER", "PGUSER", "DB_USER"),
+    )
+    postgres_password: SecretStr = Field(
+        default=SecretStr(""),
+        validation_alias=AliasChoices("POSTGRES_PASSWORD", "PGPASSWORD", "DB_PASSWORD"),
+    )
+    pgsslmode: str = Field(
+        default="prefer",
+        validation_alias=AliasChoices("PGSSLMODE"),
+    )
 
 
 class AuthSettings(BaseSettings):
@@ -213,6 +233,20 @@ class AuthSettings(BaseSettings):
         default=None,
         validation_alias=AliasChoices("OIDC_JWKS_URL"),
     )
+    oidc_verify_ssl: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("OIDC_VERIFY_SSL"),
+    )
+    oidc_strict_claims: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("OIDC_STRICT_CLAIMS"),
+    )
+    allow_unauthenticated_access: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "ALLOW_UNAUTHENTICATED_ACCESS", "CAIPE_UNSAFE_RBAC_BYPASS"
+        ),
+    )
 
 
 class EvalConfig(BaseSettings):
@@ -232,7 +266,10 @@ class EvalConfig(BaseSettings):
     gate_config: Path = DEFAULT_GATE_CONFIG
     questions_file: Path | None = None
     prompt_style: str | None = "generation"
-    prompt_config: Path | None = None
+    prompt_config: Path | None = Field(
+        default=None,
+        validation_alias=AliasChoices("DEEPEVAL_PROMPT_CONFIG", "PROMPT_CONFIG"),
+    )
 
     combine_with_level: bool | None = None
     max_items: int | None = None
@@ -240,6 +277,10 @@ class EvalConfig(BaseSettings):
     top_k: int = 3
     max_context_chars: int = 12000
     fail_on_error: bool = False
+    show_indicator: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("DEEPEVAL_SHOW_INDICATOR", "SHOW_INDICATOR"),
+    )
 
     # Sub-settings
     llm: LLMSettings = Field(default_factory=LLMSettings)
@@ -249,6 +290,7 @@ class EvalConfig(BaseSettings):
     auth: AuthSettings = Field(default_factory=AuthSettings)
 
     agentic: bool = False
+    trace_log: bool = False
     oracle_retrieval: bool = False
     oracle_testing: bool = False
     gate: bool = False
@@ -367,25 +409,32 @@ class EvalConfig(BaseSettings):
         self.llm.model = val
 
     def to_config_args(self) -> dict[str, Any]:
-        """Convert model fields to serializable configuration dictionary."""
+        """Convert model fields to a safe, log-friendly dictionary omitting secret fields."""
         res: dict[str, Any] = {}
         for k, v in self.model_dump().items():
-            if v is None or k.startswith("_"):
+            k_lower = k.lower()
+            if v is None or k.startswith("_") or isinstance(v, SecretStr):
+                continue
+            if any(
+                sens in k_lower
+                for sens in ("key", "secret", "token", "password", "dsn")
+            ):
                 continue
             if isinstance(v, Path):
                 res[k] = str(v)
-            elif isinstance(v, SecretStr):
-                res[k] = "***REDACTED***"
             elif isinstance(v, dict):
-                # Clean nested secret dicts
-                res[k] = {
-                    sub_k: (
-                        "***REDACTED***"
-                        if "key" in sub_k or "secret" in sub_k or "token" in sub_k
-                        else sub_v
-                    )
-                    for sub_k, sub_v in v.items()
-                }
+                sub_dict = {}
+                for sub_k, sub_v in v.items():
+                    sub_lower = sub_k.lower()
+                    if sub_v is None or isinstance(sub_v, SecretStr):
+                        continue
+                    if any(
+                        sens in sub_lower
+                        for sens in ("key", "secret", "token", "password", "dsn")
+                    ):
+                        continue
+                    sub_dict[sub_k] = sub_v
+                res[k] = sub_dict
             else:
                 res[k] = v
         res["datasource_id"] = self.datasource_id
