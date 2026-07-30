@@ -250,6 +250,7 @@ Detailed documentation is available in the docs folder:
 - [EnterpriseRAG-Bench](docs/enterprise_rag_bench.md)
 - [HotpotQA](docs/hotpotqa.md)
 - [Project Structure](docs/project_structure.md)
+- [REST API Service](docs/rest_api_service.md)
 - [Setup and Usage](docs/setup_and_usage.md)
 
 ## Notes

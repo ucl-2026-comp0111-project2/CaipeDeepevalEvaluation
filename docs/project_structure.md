@@ -51,7 +51,7 @@ The core package is structured into functional modules based on responsibility:
 
 | Subdirectory | Role & Responsibility | Key Components / Files |
 | --- | --- | --- |
-| **`api/`** | REST API service layer providing FastAPI routes, auth validation, and background job queue management. | `service.py`, `auth.py`, `job_queue.py` |
+| **`api/`** | REST API service layer providing FastAPI routes (`app.py`), auth validation (`auth.py`), telemetry metrics (`telemetry.py`), and background job queue management (`job_queue.py`). | `app.py`, `auth.py`, `job_queue.py`, `telemetry.py` |
 | **`clients/`** | High-level client abstractions and adapters for RAG backends, LLMs, and precomputed oracles. Implements standard interfaces (e.g. `BaseRagClient`, `RagQueryResult`). | `rag.py` (`AgenticRagAdapter`, `StandardCaipeRagClient`), `caipe.py`, `llm.py`, `oracle.py` |
 | **`core/`** | Core settings, Pydantic configurations, and shared I/O utility helpers. | `config.py` (`EvalConfig`, `AgenticSettings`), `io_utils.py` |
 | **`datasets/`** | Dataset loading, sampling, formatting, and payload generation for supported evaluation benchmarks. | `enterprise.py`, `hotpotqa.py`, `custom_upload.py` |

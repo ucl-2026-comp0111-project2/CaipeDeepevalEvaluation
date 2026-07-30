@@ -1,12 +1,12 @@
 # REST API Evaluation & Results Management Service (`api.py`)
 
-The REST API Evaluation Service provides an asynchronous HTTP REST interface and OpenAPI/Swagger documentation (`/docs`, `/redoc`) for running evaluation pipelines, submitting custom datasets, managing background evaluation jobs, querying results, downloading CSV reports, and persisting evaluation runs in PostgreSQL.
+The REST API Evaluation Service provides an asynchronous HTTP REST interface and interactive OpenAPI/Swagger UI (`/docs`, `/redoc`) for running evaluation pipelines, submitting custom datasets, managing background evaluation jobs, querying results, downloading CSV reports, and persisting evaluation runs in PostgreSQL.
 
 ---
 
 ## Architectural Overview & Design Patterns
 
-The service is implemented in [`src/deepeval_eval/api.py`](file:///Users/alexanghh/development/CaipeDeepevalEvaluation/src/deepeval_eval/api.py) using **FastAPI** and **ASGI (`uvicorn`)**. It incorporates key enterprise software design patterns:
+The service is implemented in [`src/deepeval_eval/api/app.py`](file:///Users/alexanghh/development/CaipeDeepevalEvaluation/src/deepeval_eval/api/app.py) using **FastAPI** and **ASGI (`uvicorn`)**. It incorporates key enterprise software design patterns:
 
 ### 1. Repository / Sink Pattern (Data Abstraction)
 - **Concept**: Decouples evaluation business logic from persistent storage mechanisms.
@@ -84,6 +84,7 @@ JSON payload used when submitting evaluation jobs via `POST /eval/jobs`.
 | `llm_api_key` | `str \| null` | `null` | - | Custom LLM API key. |
 | `llm_model` | `str \| null` | `null` | - | Custom LLM model name (e.g., `"gpt-4o"`). |
 | `agentic` | `bool` | `false` | - | Route queries through CAIPE supervisor agent (A2A). |
+| `trace_log` | `bool` | `false` | - | Save detailed agentic stream and query trace logs to disk. |
 | `agent_id` | `str \| null` | `null` | - | Target CAIPE agent ID for agentic RAG evaluation (defaults to `CAIPE_AGENT_ID` env var or `"hello-world"`). |
 | `supervisor_url` | `str \| null` | `null` | - | CAIPE supervisor endpoint URL. |
 | `fail_on_error` | `bool` | `false` | - | Fail job loudly if a single query fails. |

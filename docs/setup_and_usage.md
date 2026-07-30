@@ -204,7 +204,7 @@ As an alternative to CLI execution, launch the REST API Evaluation Service:
 uv run python -m deepeval_eval.api
 ~~~
 
-Access interactive Swagger UI documentation at `http://localhost:8000/docs`. See [rest_api_service.md](rest_api_service.md) for endpoint details and usage examples.
+Access interactive Swagger UI documentation at `http://localhost:8000/docs` (or ReDoc at `/redoc`). See [rest_api_service.md](rest_api_service.md) for endpoint details and usage examples.
 
 ## Troubleshooting
 
