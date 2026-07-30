@@ -51,40 +51,40 @@ def managed_live_server() -> Iterator[str]:
         cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE
     )
 
-    # Poll /health until server responds HTTP 200 (timeout: 15 seconds)
-    ready = False
-    start_time = time.time()
-    while time.time() - start_time < 15.0:
-        if proc.poll() is not None:
+    try:
+        # Poll /health until server responds HTTP 200 (timeout: 15 seconds)
+        ready = False
+        start_time = time.time()
+        while time.time() - start_time < 15.0:
+            if proc.poll() is not None:
+                _, stderr_data = proc.communicate()
+                pytest.fail(
+                    f"Server subprocess exited unexpectedly during startup: {stderr_data.decode()}"
+                )
+            try:
+                resp = httpx.get(f"{base_url}/health", timeout=1.0)
+                if resp.status_code == 200:
+                    ready = True
+                    break
+            except Exception:
+                pass
+            time.sleep(0.5)
+
+        if not ready:
             _, stderr_data = proc.communicate()
             pytest.fail(
-                f"Server subprocess exited unexpectedly during startup: {stderr_data.decode()}"
+                f"Managed server failed to start on {base_url} within 15s. Stderr: {stderr_data.decode()}"
             )
-        try:
-            resp = httpx.get(f"{base_url}/health", timeout=1.0)
-            if resp.status_code == 200:
-                ready = True
-                break
-        except Exception:
-            pass
-        time.sleep(0.5)
 
-    if not ready:
+        yield base_url
+    finally:
+        # Teardown: terminate process cleanly
         proc.terminate()
-        _, stderr_data = proc.communicate()
-        pytest.fail(
-            f"Managed server failed to start on {base_url} within 15s. Stderr: {stderr_data.decode()}"
-        )
-
-    yield base_url
-
-    # Teardown: terminate process cleanly
-    proc.terminate()
-    try:
-        proc.wait(timeout=5.0)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        proc.wait()
+        try:
+            proc.wait(timeout=5.0)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
 
 
 @pytest.fixture(scope="module")
