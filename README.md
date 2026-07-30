@@ -245,13 +245,16 @@ precomputed_deepeval_benchmark_answer-mode_timestamp.csv
 
 Detailed documentation is available in the docs folder:
 
-- [Architecture](docs/architecture.md)
+- [Setup and Usage](docs/setup_and_usage.md)
+- [REST API Service](docs/rest_api_service.md)
+- [CI/CD Quality Gate & Pytest Integration](docs/cicd_quality_gate.md)
 - [Evaluation Pipeline](docs/evaluation_pipeline.md)
+- [Architecture](docs/architecture.md)
+- [Project Structure](docs/project_structure.md)
 - [EnterpriseRAG-Bench](docs/enterprise_rag_bench.md)
 - [HotpotQA](docs/hotpotqa.md)
-- [Project Structure](docs/project_structure.md)
-- [REST API Service](docs/rest_api_service.md)
-- [Setup and Usage](docs/setup_and_usage.md)
+
+
 
 ## Notes
 

@@ -206,7 +206,34 @@ uv run python -m deepeval_eval.api
 
 Access interactive Swagger UI documentation at `http://localhost:8000/docs` (or ReDoc at `/redoc`). See [rest_api_service.md](rest_api_service.md) for endpoint details and usage examples.
 
+## Testing & Pytest Usage
+
+Run automated test suites using `pytest` (managed via `uv` or standard Python virtual environment):
+
+Run the entire test suite:
+
+~~~bash
+uv run pytest
+~~~
+
+Run specific module test suites:
+
+~~~bash
+uv run pytest tests/test_gate.py
+uv run pytest tests/test_api.py
+uv run pytest tests/test_agentic_rag.py
+~~~
+
+Run test coverage checks:
+
+~~~bash
+uv run pytest --cov=src
+~~~
+
+See [cicd_quality_gate.md](cicd_quality_gate.md) for detailed instructions on writing quality gate tests in pytest and setting up GitHub Actions CI/CD pipelines.
+
 ## Troubleshooting
+
 
 | Problem | Likely cause | What to check |
 | --- | --- | --- |

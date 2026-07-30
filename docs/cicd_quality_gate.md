@@ -87,3 +87,106 @@ error_tolerance: 0.10
 violations pass with a warning (exit 0). An error rate above `error_tolerance`,
 or an empty result set, is also a hard failure (so a broken or empty run can
 never be mistaken for a passing one).
+
+---
+
+## Pytest Integration for CI/CD Gatekeeping
+
+You can run quality gate checks as part of your `pytest` suite in CI/CD pipelines to ensure code changes pass quality thresholds before merging.
+
+### 1. Running Unit & Integration Gate Tests
+
+Run the full pytest suite (including gate and metric tests):
+
+```bash
+uv run pytest
+```
+
+Run only gate and evaluator tests:
+
+```bash
+uv run pytest tests/test_gate.py tests/test_eval_engine.py -v
+```
+
+### 2. Writing Custom Pytest Quality Gate Tests
+
+You can write pytest test cases in your repository using the `evaluate_gate` function to enforce threshold policies programmatically:
+
+```python
+import json
+from pathlib import Path
+import pytest
+from deepeval_eval.engine.gate import evaluate_gate, load_thresholds
+
+def test_evaluation_quality_gate():
+    # Load evaluation result artifact from previous step or mock payload
+    results_path = Path("results/latest_eval_results.json")
+    if not results_path.exists():
+        pytest.skip("Evaluation results file not found.")
+
+    with open(results_path) as f:
+        data = json.load(f)
+
+    # Load gate thresholds configuration
+    config = load_thresholds(Path("gate_thresholds.yaml"))
+
+    # Evaluate gate
+    report = evaluate_gate(data["results"], config)
+
+    # Fail pytest test case if any hard violations exist
+    assert report.passed, f"Quality gate failed with hard violations: {report.hard_violations}"
+```
+
+---
+
+## GitHub Actions CI/CD Integration Example
+
+Here is a complete `.github/workflows/quality_gate.yml` workflow example that runs unit tests via `pytest` and evaluates benchmark RAG quality gates on every Pull Request:
+
+```yaml
+name: CI/CD Quality Gate & Test Suite
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test-and-gate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install uv and dependencies
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          uv venv
+          uv pip install -e .[dev]
+
+      - name: Step 1 - Syntax & Pytest Unit Tests
+        run: |
+          uv run pytest -v --cov=src
+
+      - name: Step 2 - Precomputed Evaluation & Quality Gate
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_ENDPOINT: ${{ secrets.OPENAI_ENDPOINT }}
+          OPENAI_MODEL_NAME: "gpt-4o"
+        run: |
+          uv run python src/deepeval_eval/engine/deepeval_evaluator.py eval \
+            --benchmark hotpotqa \
+            --precompute \
+            --answer-mode generate \
+            --max-items 20 \
+            --gate \
+            --gate-config gate_thresholds.yaml
+```
+
