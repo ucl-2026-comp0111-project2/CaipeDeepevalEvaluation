@@ -89,6 +89,11 @@ class OIDCProvider:
         self.verify_ssl = verify_ssl
         self.strict_claims = strict_claims
 
+    def _http_client(self) -> httpx.AsyncClient:
+        return httpx.AsyncClient(
+            timeout=10.0, follow_redirects=True, verify=self.verify_ssl
+        )
+
     async def get_jwks(self) -> dict[str, Any]:
         now = time.time()
         if self.jwks_cache and (now - self.jwks_cache_time) < self.jwks_cache_ttl:
@@ -98,9 +103,7 @@ class OIDCProvider:
             disc_url = (
                 self.discovery_url or f"{self.issuer}/.well-known/openid-configuration"
             )
-            async with httpx.AsyncClient(
-                timeout=10.0, follow_redirects=True, verify=self.verify_ssl
-            ) as client:
+            async with self._http_client() as client:
                 resp = await client.get(disc_url)
                 resp.raise_for_status()
                 data = resp.json()
@@ -109,9 +112,7 @@ class OIDCProvider:
         if not self.jwks_uri:
             raise ValueError(f"Could not determine JWKS URI for provider '{self.name}'")
 
-        async with httpx.AsyncClient(
-            timeout=10.0, follow_redirects=True, verify=self.verify_ssl
-        ) as client:
+        async with self._http_client() as client:
             resp = await client.get(self.jwks_uri)
             resp.raise_for_status()
             self.jwks_cache = resp.json()
@@ -274,11 +275,7 @@ async def require_authenticated_user(
                 detail=f"Invalid authentication token: {exc}",
             )
 
-    settings = (
-        auth_manager.settings
-        if hasattr(auth_manager, "settings")
-        else None
-    )
+    settings = auth_manager.settings if hasattr(auth_manager, "settings") else None
     if allow_unauthenticated_access(settings):
         return UserContext(
             subject="anonymous-local-dev",
