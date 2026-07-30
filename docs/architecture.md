@@ -61,7 +61,7 @@ flowchart LR
 | CAIPE client | src/deepeval_eval/clients/caipe.py | Wraps rag-server REST calls and extracts retrieved contexts and source metadata. |
 | RAG client adapter | src/deepeval_eval/clients/rag.py | Unified RAG client adapter for CAIPE and Agentic RAG endpoints. |
 | Precomputed RAG client | src/deepeval_eval/clients/oracle.py | Precomputed evaluation client handling offline or reference modes. |
-| Configuration | src/deepeval_eval/core/config.py | Defines default paths, environment loading, and LLM setting resolution. |
+| Configuration | [src/deepeval_eval/core/config.py](file:///Users/alexanghh/development/CaipeDeepevalEvaluation/src/deepeval_eval/core/config.py) | Centralized Pydantic-based configuration management, settings objects, environment variable remapping, and secret masking. |
 | LLM adapter | src/deepeval_eval/clients/llm_client.py | Calls an OpenAI compatible LLM endpoint and adapts it to DeepEval. |
 | Shared metrics | src/deepeval_eval/core/metrics.py | Builds DeepEval metrics and computes document ID and short answer checks. |
 | Enterprise dataset logic | src/deepeval_eval/datasets/enterprise.py | Downloads and samples EnterpriseRAG-Bench questions and source slices. |
@@ -107,3 +107,84 @@ Both use the resolved OPENAI_ENDPOINT, OPENAI_API_KEY, and OPENAI_MODEL_NAME val
 5. Retrieved contexts are passed to the LLM to generate an answer.
 6. DeepEval metrics and retrieval checks are computed.
 7. Results are written to timestamped JSON and CSV files.
+
+## Configuration & Settings Architecture
+
+Configuration management in [config.py](file:///Users/alexanghh/development/CaipeDeepevalEvaluation/src/deepeval_eval/core/config.py) is built around Pydantic `BaseSettings` (`pydantic-settings`) to provide a single, strongly-typed source of truth across CLI entrypoints, REST API endpoints, database sinks, and LLM/RAG clients.
+
+### Domain Settings Hierarchy
+
+Settings are structured into modular Pydantic models, combined into a top-level composite `EvalConfig`:
+
+```mermaid
+classDiagram
+    class EvalConfig {
+        +dataset_name: str
+        +answer_mode: str
+        +data_dir: Path
+        +results_dir: Path
+        +llm: LLMSettings
+        +agentic_settings: AgenticSettings
+        +caipe: CaipeClientSettings
+        +db: DatabaseSettings
+        +auth: AuthSettings
+        +to_config_args() dict
+    }
+    class LLMSettings {
+        +base_url: str
+        +api_key: SecretStr
+        +model: str
+    }
+    class AgenticSettings {
+        +agent_id: str
+        +supervisor_url: str
+        +insecure: bool
+        +datasource_id: str
+        +client_id: str
+        +client_secret: SecretStr
+    }
+    class CaipeClientSettings {
+        +base_url: str
+        +auth_token: SecretStr
+        +insecure: bool
+        +keycloak_url: str
+    }
+    class DatabaseSettings {
+        +connection_string: SecretStr
+        +postgres_host: str
+        +postgres_port: str
+        +postgres_db: str
+        +postgres_user: str
+        +postgres_password: SecretStr
+    }
+    class AuthSettings {
+        +api_key: SecretStr
+        +oidc_issuer_url: str
+        +oidc_audience: str
+        +allow_unauthenticated_access: bool
+    }
+
+    EvalConfig *-- LLMSettings
+    EvalConfig *-- AgenticSettings
+    EvalConfig *-- CaipeClientSettings
+    EvalConfig *-- DatabaseSettings
+    EvalConfig *-- AuthSettings
+```
+
+### Core Design Principles & Rules
+
+1. **Dependency Injection Primacy**:
+   - Core runtime classes (e.g., `CAIPEClient`, `AgenticRAGAdapter`, `PostgresResultSink`, `OpenAICompatibleClient`, `DatabaseManager`) MUST accept explicit domain settings objects or explicit parameters in their `__init__` constructors.
+   - The global singleton `get_eval_config()` (backed by `@lru_cache`) is reserved for CLI entrypoints and default fallback parameter resolution. Internal classes and service handlers MUST NOT hardcode calls to `get_eval_config()` internally when injected settings can be passed.
+
+2. **Environment Variable Fallback Order (`AliasChoices`)**:
+   - Environment variables are resolved via Pydantic `AliasChoices` in strict precedence order (e.g., `DATABASE_URL` -> `LANGGRAPH_CHECKPOINT_POSTGRES_DSN` -> `POSTGRES_DSN` -> `DB_CONNECTION_STRING`).
+   - `.env` file loading is disabled by default (`DEEPEVAL_DISABLE_DOTENV=1`) to prevent unexpected local `.env` pollution in production or CI environments.
+
+3. **Security & Secret Masking (`SecretStr`)**:
+   - All credentials (API keys, client secrets, database passwords, DSNs) MUST be typed as `SecretStr`.
+   - `to_config_args()` produces sanitized, log-safe dictionaries by filtering out `SecretStr` fields and keys matching sensitive patterns (`key`, `secret`, `token`, `password`, `dsn`).
+
+4. **Backward Compatibility Bridges**:
+   - Flat property getters/setters on `EvalConfig` (e.g., `llm_base_url`, `supervisor_url`, `datasource_id`) and standalone resolver functions (`resolve_llm_settings`, `resolve_caipe_base_url`, `load_agentic_config`) bridge legacy signatures to domain settings objects.
+

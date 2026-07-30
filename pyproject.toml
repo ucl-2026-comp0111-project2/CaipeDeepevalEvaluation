@@ -37,3 +37,9 @@ dev = [
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]
 ignore = ["E501", "UP042"]
+
+[tool.pytest.ini_options]
+addopts = "-m 'not e2e'"
+markers = [
+    "e2e: mark test as a live system end-to-end test requiring real infrastructure services",
+]

@@ -33,7 +33,7 @@ All wrapper scripts resolve the repository root from the script location and pas
 | Path | Responsibility |
 | --- | --- |
 | src/deepeval_eval/clients/caipe.py | CAIPE rag-server client, ingestion job operations, query calls, and retrieval response parsing. |
-| src/deepeval_eval/core/config.py | Default paths, generated folder locations, environment loading, and LiteLLM setting resolution. |
+| [src/deepeval_eval/core/config.py](file:///Users/alexanghh/development/CaipeDeepevalEvaluation/src/deepeval_eval/core/config.py) | Centralized Pydantic-based configuration management (`EvalConfig`, domain settings, alias resolution, secret protection). |
 | src/deepeval_eval/core/io_utils.py | Cached download helpers and JSONL evaluation question loading. |
 | src/deepeval_eval/clients/llm_client.py | OpenAI compatible LLM client, DeepEval model adapter, and prompt builders. |
 | src/deepeval_eval/core/metrics.py | DeepEval metric construction, document ID scoring, and HotpotQA short-answer scoring. |
@@ -44,6 +44,26 @@ All wrapper scripts resolve the repository root from the script location and pas
 | --- | --- | --- |
 | src/deepeval_eval/datasets/enterprise.py | EnterpriseRAG-Bench | Load questions, download zip slices, sample documents, build CAIPE document payloads, and write generated data files. |
 | src/deepeval_eval/datasets/hotpotqa.py | HotpotQA | Read preprocessed zip files, select questions, select gold documents plus distractors, build CAIPE payloads, and write generated data files. |
+
+## Package Architecture (`src/deepeval_eval/`)
+
+The core package is structured into functional modules based on responsibility:
+
+| Subdirectory | Role & Responsibility | Key Components / Files |
+| --- | --- | --- |
+| **`api/`** | REST API service layer providing FastAPI routes, auth validation, and background job queue management. | `service.py`, `auth.py`, `job_queue.py` |
+| **`clients/`** | High-level client abstractions and adapters for RAG backends, LLMs, and precomputed oracles. Implements standard interfaces (e.g. `BaseRagClient`, `RagQueryResult`). | `rag.py` (`AgenticRagAdapter`, `StandardCaipeRagClient`), `caipe.py`, `llm.py`, `oracle.py` |
+| **`core/`** | Core settings, Pydantic configurations, and shared I/O utility helpers. | `config.py` (`EvalConfig`, `AgenticSettings`), `io_utils.py` |
+| **`datasets/`** | Dataset loading, sampling, formatting, and payload generation for supported evaluation benchmarks. | `enterprise.py`, `hotpotqa.py`, `custom_upload.py` |
+| **`db/`** | Database schema, ORM models, and manager for persisting async evaluation job records and metrics. | `manager.py`, `models.py`, `schema.py` |
+| **`engine/`** | Core evaluation execution engines, low-level retrieval parsers, DeepEval judges, metric scoring, and quality gates. | `agentic_rag.py` (`AgenticRetriever`, SSE/A2A parsers, `TraceEvent`), `eval_engine.py`, `deepeval_evaluator.py`, `metrics.py`, `gate.py` |
+| **`ingest/`** | Ingestion execution scripts and CLI tools for registering and pushing benchmark documents into CAIPE datasources. | `ingest_cli.py`, `enterprise_deepeval.py`, `hotpotqa_deepeval.py` |
+| **`sinks/`** | Modular result sinks for writing evaluation metrics and execution logs to target storage destinations. | `base.py`, `postgres.py`, `json.py`, `csv.py` |
+
+### Engine vs Clients Distinction
+
+- **`clients/`**: Provides clean, standardized adapter interfaces (such as `BaseRagClient` and `AgenticRagAdapter` in `clients/rag.py`). Code in `clients/` exposes uniform `.query()` signatures for evaluation suites.
+- **`engine/`**: Implements the actual underlying execution logic, low-level protocols (e.g. SSE event streaming parsing, trace capturing in `engine/agentic_rag.py`), DeepEval metric evaluation algorithms (`engine/metrics.py`), and decision gates (`engine/gate.py`).
 
 ## Generated Local Directories
 
@@ -64,15 +84,16 @@ These directories are ignored by Git and are produced during local runs.
 | Configure model and paths | core/config.py, .env.example |
 | Load dataset | datasets/enterprise.py, datasets/hotpotqa.py, core/io_utils.py |
 | Ingest to CAIPE | ingest/enterprise_deepeval.py, ingest/hotpotqa_deepeval.py, clients/caipe.py |
-| Retrieve from CAIPE | clients/caipe.py |
-| Generate answers | clients/llm_client.py |
-| Score outputs | core/metrics.py |
+| Retrieve from CAIPE | clients/caipe.py, clients/rag.py, engine/agentic_rag.py |
+| Generate answers | clients/llm.py |
+| Score outputs | engine/metrics.py, engine/gate.py |
 | Run from terminal | scripts/*.sh, or direct Python CLI |
 
 ## Notes for New Contributors
 
 - Keep generated data and result files out of Git.
 - Add new dataset logic in a separate dataset module under `datasets/` rather than expanding entry point files.
-- Shared behaviour should go into `clients/caipe.py`, `clients/llm_client.py`, `core/metrics.py`, `core/config.py`, or `core/io_utils.py`.
+- Shared adapters should go in `clients/`, execution engines in `engine/`, core configurations in `core/config.py`, and persistence sinks in `sinks/`.
 - If a new command changes outputs or arguments, update README.md and docs/setup_and_usage.md.
+
 
