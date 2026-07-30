@@ -189,14 +189,7 @@ class PostgresResultSink:
         config_args: dict[str, Any],
     ) -> None:
         try:
-            import psycopg2
             from psycopg2.extras import execute_values
-
-            if psycopg2 is None:
-                logger.warning(
-                    "psycopg2 is not installed; skipping database persistence."
-                )
-                return
         except (ImportError, ModuleNotFoundError):
             logger.warning("psycopg2 is not installed; skipping database persistence.")
             return

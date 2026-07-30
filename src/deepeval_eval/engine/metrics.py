@@ -100,7 +100,7 @@ class NormalizedExactMatchMetric(BaseMetric):
         self.reason: str | None = None
         self.success: bool | None = None
 
-    def measure(self, test_case: LLMTestCase) -> float:
+    def measure(self, test_case: LLMTestCase, *args: Any, **kwargs: Any) -> float:
         actual = test_case.actual_output or ""
         expected = test_case.expected_output or ""
         exact, _ = answer_scores(actual, expected)
@@ -135,7 +135,7 @@ class ContainsReferenceMetric(BaseMetric):
         self.reason: str | None = None
         self.success: bool | None = None
 
-    def measure(self, test_case: LLMTestCase) -> float:
+    def measure(self, test_case: LLMTestCase, *args: Any, **kwargs: Any) -> float:
         actual = test_case.actual_output or ""
         expected = test_case.expected_output or ""
         _, contains = answer_scores(actual, expected)
@@ -191,7 +191,7 @@ class AnswerCorrectnessMetric(BaseMetric):
         self.reason: str | None = ""
         self.success: bool | None = False
 
-    def measure(self, test_case: LLMTestCase) -> float:
+    def measure(self, test_case: LLMTestCase, *args: Any, **kwargs: Any) -> float:
         self.score = self.geval_judge.measure(test_case)
         self.success = self.geval_judge.is_successful()
         self.reason = self.geval_judge.reason
@@ -217,7 +217,7 @@ class MRRMetric(BaseMetric):
         self.reason: str | None = None
         self.success: bool | None = None
 
-    def measure(self, test_case: LLMTestCase) -> float:
+    def measure(self, test_case: LLMTestCase, *args: Any, **kwargs: Any) -> float:
         metadata = test_case.metadata or {}
         retrieved_ids = [str(d) for d in metadata.get("retrieved_doc_ids", [])]
         expected_ids = set(str(d) for d in metadata.get("expected_doc_ids", []))
@@ -272,7 +272,7 @@ class NDCGAtKMetric(BaseMetric):
         self.reason: str | None = None
         self.success: bool | None = None
 
-    def measure(self, test_case: LLMTestCase) -> float:
+    def measure(self, test_case: LLMTestCase, *args: Any, **kwargs: Any) -> float:
         metadata = test_case.metadata or {}
         retrieved_ids = [str(d) for d in metadata.get("retrieved_doc_ids", [])]
         expected_ids = set(str(d) for d in metadata.get("expected_doc_ids", []))
@@ -337,7 +337,7 @@ class RetrievalRecallMetric(BaseMetric):
         self.reason: str | None = None
         self.success: bool | None = None
 
-    def measure(self, test_case: LLMTestCase) -> float:
+    def measure(self, test_case: LLMTestCase, *args: Any, **kwargs: Any) -> float:
         metadata = test_case.metadata or {}
         retrieved_ids = {str(d) for d in metadata.get("retrieved_doc_ids", [])}
         expected_ids = {str(d) for d in metadata.get("expected_doc_ids", [])}
@@ -381,7 +381,7 @@ class RetrievalPrecisionMetric(BaseMetric):
         self.reason: str | None = None
         self.success: bool | None = None
 
-    def measure(self, test_case: LLMTestCase) -> float:
+    def measure(self, test_case: LLMTestCase, *args: Any, **kwargs: Any) -> float:
         metadata = test_case.metadata or {}
         retrieved_ids = {str(d) for d in metadata.get("retrieved_doc_ids", [])}
         expected_ids = {str(d) for d in metadata.get("expected_doc_ids", [])}

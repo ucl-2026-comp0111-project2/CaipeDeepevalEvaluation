@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import threading
 from typing import Any
 
@@ -90,48 +89,18 @@ class DatabaseManager:
 
         psycopg2 = sys.modules.get("psycopg2") or __import__("psycopg2")
 
-        conn_str = (
-            self.connection_string
-            or os.environ.get("DATABASE_URL")
-            or os.environ.get("LANGGRAPH_CHECKPOINT_POSTGRES_DSN")
-            or os.environ.get("POSTGRES_DSN")
-        )
+        conn_str = self.connection_string
         if conn_str:
             return psycopg2.connect(conn_str, connect_timeout=5)
 
-        host = (
-            os.environ.get("POSTGRES_HOST")
-            or os.environ.get("PGHOST")
-            or os.environ.get("DB_HOST", "localhost")
-        )
-        port = (
-            os.environ.get("POSTGRES_PORT")
-            or os.environ.get("PGPORT")
-            or os.environ.get("DB_PORT", "5432")
-        )
-        dbname = (
-            os.environ.get("POSTGRES_DB")
-            or os.environ.get("PGDATABASE")
-            or os.environ.get("DB_NAME", "caipe_eval")
-        )
-        user = (
-            os.environ.get("POSTGRES_USER")
-            or os.environ.get("PGUSER")
-            or os.environ.get("DB_USER", "postgres")
-        )
-        password = (
-            os.environ.get("POSTGRES_PASSWORD")
-            or os.environ.get("PGPASSWORD")
-            or os.environ.get("DB_PASSWORD", "")
-        )
-        sslmode = os.environ.get("PGSSLMODE", "prefer")
+        settings = getattr(self, "_db_settings", None) or DatabaseSettings()
         return psycopg2.connect(
-            host=host,
-            port=port,
-            dbname=dbname,
-            user=user,
-            password=password,
-            sslmode=sslmode,
+            host=settings.postgres_host or "localhost",
+            port=settings.postgres_port,
+            dbname=settings.postgres_db,
+            user=settings.postgres_user,
+            password=settings.postgres_password.get_secret_value(),
+            sslmode=settings.pgsslmode,
             connect_timeout=5,
         )
 

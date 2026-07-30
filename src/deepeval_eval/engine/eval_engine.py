@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import logging
-import os
 import time
 from typing import Any
 
 from deepeval_eval.api.telemetry import trace_evaluation_span
 from deepeval_eval.clients.llm import DeepEvalJudge, OpenAICompatibleClient
 from deepeval_eval.core.config import (
-    EvalConfig,
+    EvalConfig as EvalConfig,
+)
+from deepeval_eval.core.config import (
     ensure_dirs,
 )
 from deepeval_eval.core.io_utils import sanitize_path
@@ -57,6 +58,7 @@ def _build_rag_client(config: Any) -> Any:
             fail_on_error=getattr(config, "fail_on_error", False),
             datasource_id=getattr(config, "datasource_id", None),
             agent_id=getattr(config, "agent_id", None),
+            trace_log=getattr(config, "trace_log", False),
         )
     else:
         caipe_settings = getattr(config, "caipe", None)
@@ -96,7 +98,7 @@ def run_evaluation(
 
     from deepeval.test_case import LLMTestCase
 
-    datasource_id = config.datasource_id or os.environ.get("CAIPE_DATASOURCE_ID")
+    datasource_id = config.datasource_id
     dataset_name = config.dataset_name
 
     if data_loader is None:
@@ -189,11 +191,18 @@ def run_evaluation(
             },
         )
 
+        show_indicator = getattr(config, "show_indicator", False)
         metric_results: dict[str, dict[str, Any]] = {}
         for metric in metrics:
             metric_name = metric.__class__.__name__
+            logger.debug(
+                f"[eval_engine] Executing metric '{metric_name}' for question {idx}/{len(rows)}"
+            )
             try:
-                metric.measure(test_case)
+                try:
+                    metric.measure(test_case, _show_indicator=show_indicator)
+                except TypeError:
+                    metric.measure(test_case)
                 reason = getattr(metric, "reason", None)
                 if reason is None:
                     get_reason_fn = getattr(metric, "get_reason", None)

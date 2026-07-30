@@ -14,9 +14,9 @@ from deepeval_eval.core.config import (
     DEFAULT_DATA_DIR,
     DEFAULT_GATE_CONFIG,
     DEFAULT_RESULTS_DIR,
+    EvalConfig,
 )
 from deepeval_eval.engine.eval_engine import (
-    EvalConfig,
     QualityGateError,
     _build_rag_client,
     run_evaluation,
@@ -77,6 +77,11 @@ def _add_eval_args(parser: argparse.ArgumentParser) -> None:
         "--agentic",
         action="store_true",
         help="Route queries through caipe-supervisor A2A endpoint",
+    )
+    parser.add_argument(
+        "--trace-log",
+        action="store_true",
+        help="Save detailed agentic stream and query trace logs to disk",
     )
     parser.add_argument(
         "--agent-id",
@@ -164,6 +169,7 @@ def _run_eval(args: argparse.Namespace) -> None:
         llm_api_key=getattr(args, "llm_api_key", None),
         llm_model=getattr(args, "llm_model", None),
         agentic=getattr(args, "agentic", False),
+        trace_log=getattr(args, "trace_log", False),
         agent_id=getattr(args, "agent_id", None),
         supervisor_url=getattr(args, "supervisor_url", "http://localhost:8000"),
         fail_on_error=getattr(args, "fail_on_error", False),
