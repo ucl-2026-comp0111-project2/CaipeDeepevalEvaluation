@@ -51,11 +51,11 @@ The core package is structured into functional modules based on responsibility:
 
 | Subdirectory | Role & Responsibility | Key Components / Files |
 | --- | --- | --- |
-| **`api/`** | REST API service layer providing FastAPI routes (`app.py`), auth validation (`auth.py`), telemetry metrics (`telemetry.py`), and background job queue management (`job_queue.py`). | `app.py`, `auth.py`, `job_queue.py`, `telemetry.py` |
+| **`api/`** | REST API service layer providing FastAPI routes (`app.py`), Question Sets & Questions CRUD (`question_sets.py`), auth validation (`auth.py`), telemetry metrics (`telemetry.py`), and background job queue management (`job_queue.py`). | `app.py`, `question_sets.py`, `auth.py`, `job_queue.py`, `telemetry.py` |
 | **`clients/`** | High-level client abstractions and adapters for RAG backends, LLMs, and precomputed oracles. Implements standard interfaces (e.g. `BaseRagClient`, `RagQueryResult`). | `rag.py` (`AgenticRagAdapter`, `StandardCaipeRagClient`), `caipe.py`, `llm.py`, `oracle.py` |
 | **`core/`** | Core settings, Pydantic configurations, and shared I/O utility helpers. | `config.py` (`EvalConfig`, `AgenticSettings`), `io_utils.py` |
-| **`datasets/`** | Dataset loading, sampling, formatting, and payload generation for supported evaluation benchmarks. | `enterprise.py`, `hotpotqa.py`, `custom_upload.py` |
-| **`db/`** | Database schema, ORM models, and manager for persisting async evaluation job records and metrics. | `manager.py`, `models.py`, `schema.py` |
+| **`datasets/`** | Dataset loading, sampling, formatting, and payload generation for supported evaluation benchmarks. | `enterprise.py`, `hotpotqa.py`, `loader.py` |
+| **`db/`** | PostgreSQL database management split into modular managers for connection pooling, question sets/questions CRUD, and evaluation runs. | `db_manager.py`, `question_db_manager.py`, `evaluation_db_manager.py` |
 | **`engine/`** | Core evaluation execution engines, low-level retrieval parsers, DeepEval judges, metric scoring, and quality gates. | `agentic_rag.py` (`AgenticRetriever`, SSE/A2A parsers, `TraceEvent`), `eval_engine.py`, `deepeval_evaluator.py`, `metrics.py`, `gate.py` |
 | **`ingest/`** | Ingestion execution scripts and CLI tools for registering and pushing benchmark documents into CAIPE datasources. | `ingest_cli.py`, `enterprise_deepeval.py`, `hotpotqa_deepeval.py` |
 | **`sinks/`** | Modular result sinks for writing evaluation metrics and execution logs to target storage destinations. | `base.py`, `postgres.py`, `json.py`, `csv.py` |

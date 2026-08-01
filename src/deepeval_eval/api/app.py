@@ -32,6 +32,7 @@ from pydantic import BaseModel, Field
 
 from deepeval_eval.api.auth import UserContext, get_current_user
 from deepeval_eval.api.job_queue import DatabaseManager, PersistentJobQueue
+from deepeval_eval.api.question_sets import router as question_sets_router
 from deepeval_eval.api.telemetry import (
     setup_otlp_tracing,
     telemetry_metrics,
@@ -76,6 +77,10 @@ class JobStatusEnum(str, Enum):
 
 
 class EvaluationRequest(BaseModel):
+    question_set_id: int | None = Field(
+        default=None,
+        description="ID of a Question Set stored in Question Set Manager to evaluate",
+    )
     dataset_name: str = Field(
         default="enterprise",
         description="Dataset name (e.g. enterprise, hotpotqa) or custom benchmark",
@@ -838,6 +843,71 @@ def root_endpoint(
 
 # Mount Health & Telemetry APIRouter (/healthz, /livez, /readyz, /health, /metrics)
 app.include_router(telemetry_router)
+app.include_router(question_sets_router, prefix="/api/v1")
+
+
+def _prepare_job_from_question_set(
+    set_id: int, request: EvaluationRequest, user: UserContext
+) -> JobResponse:
+    qset = db_manager.questions.get_question_set(set_id)
+    if not qset:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Question set with ID={set_id} not found in database.",
+        )
+
+    res = db_manager.questions.list_questions(set_id=set_id, page=1, limit=10000)
+    questions = res["items"]
+    if not questions:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Question set ID={set_id} contains no questions.",
+        )
+
+    lines: list[str] = []
+    for q in questions:
+        row = {
+            "question_id": q.get("question_id"),
+            "user_input": q.get("input"),
+            "reference": q.get("expected_output"),
+            "category": q.get("category"),
+            "level": q.get("level"),
+            "expected_doc_ids": q.get("expected_doc_ids") or [],
+        }
+        if q.get("context"):
+            row["context"] = q["context"]
+        if q.get("extra") and isinstance(q["extra"], dict):
+            row.update(q["extra"])
+        lines.append(json.dumps(row) + "\n")
+
+    jsonl_bytes = "".join(lines).encode("utf-8")
+
+    temp_dir = tempfile.mkdtemp(prefix="eval_question_set_")
+    set_hash = hashlib.sha256(jsonl_bytes).hexdigest()[:16]
+    temp_file_path = os.path.join(temp_dir, f"qset_{set_id}_{set_hash}.jsonl")
+    validate_safe_path(temp_file_path)
+    with open(temp_file_path, "wb") as f:
+        f.write(jsonl_bytes)
+
+    if request.dataset_name == "enterprise" and qset.get("name"):
+        request.dataset_name = qset["name"]
+
+    request.question_set_id = set_id
+
+    config_dict = request.model_dump()
+    config_dict["questions_file"] = temp_file_path
+    eval_hash = compute_eval_hash(config_dict, dataset_bytes=jsonl_bytes)
+
+    job = job_manager.create_job(
+        eval_hash, config_dict, force_rerun=request.force_rerun, user=user
+    )
+
+    if job["cached"]:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        return JobResponse(**job)
+
+    persistent_job_queue.enqueue(job["job_id"], eval_hash, config_dict)
+    return JobResponse(**job)
 
 
 @app.post(
@@ -852,6 +922,9 @@ def submit_eval_job(
     user: UserContext = Depends(get_current_user),
 ) -> JobResponse:
     """Submit an evaluation job asynchronously using JSON request parameters."""
+    if request.question_set_id is not None:
+        return _prepare_job_from_question_set(request.question_set_id, request, user)
+
     config_dict = request.model_dump()
     eval_hash = compute_eval_hash(config_dict)
 
@@ -864,6 +937,24 @@ def submit_eval_job(
 
     persistent_job_queue.enqueue(job["job_id"], eval_hash, config_dict)
     return JobResponse(**job)
+
+
+@app.post(
+    "/eval/jobs/question-sets/{set_id}",
+    response_model=JobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Submit Evaluation Job for Question Set",
+    tags=["Evaluation Jobs"],
+)
+def submit_eval_job_for_question_set(
+    set_id: int,
+    request: EvaluationRequest | None = None,
+    user: UserContext = Depends(get_current_user),
+) -> JobResponse:
+    """Submit an evaluation job targeting a Question Set stored in Question Set Manager."""
+    req = request or EvaluationRequest()
+    req.question_set_id = set_id
+    return _prepare_job_from_question_set(set_id, req, user)
 
 
 @app.post(

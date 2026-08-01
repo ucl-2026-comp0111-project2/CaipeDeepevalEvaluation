@@ -434,4 +434,36 @@ with httpx.Client(base_url=API_BASE_URL, headers=headers) as client:
     if current_status == "completed":
         results_resp = client.get(f"/jobs/{job_id}/results?format=json").json()
         print("Summary:", results_resp["summary"])
+
+---
+
+## Question Sets & Questions Management API (`/api/v1/question-sets`)
+
+The `/api/v1/question-sets` endpoints allow managing question sets and individual question items stored in PostgreSQL.
+
+### Endpoints Overview
+
+| Method | Endpoint Path | Description |
+| :--- | :--- | :--- |
+| `POST` | `/eval/jobs` | Submit an async evaluation job (accepts `question_set_id` in JSON body). |
+| `POST` | `/eval/jobs/question-sets/{set_id}` | Submit an async evaluation job targeting a Question Set stored in PostgreSQL database. |
+| `POST` | `/api/v1/question-sets` | Create a new question set (blank or initialized from `.jsonl`, `.csv`, `.json` file upload). |
+| `GET` | `/api/v1/question-sets` | List question sets with pagination (`page`, `limit`) and search query (`query`). |
+| `GET` | `/api/v1/question-sets/{set_id}` | Get question set details, total question count, and category breakdown. |
+| `PUT` | `/api/v1/question-sets/{set_id}` | Update question set metadata (`name`, `description`, `source_format`). |
+| `DELETE` | `/api/v1/question-sets/{set_id}` | Delete a question set and cascade-delete all associated questions. |
+| `POST` | `/api/v1/question-sets/{set_id}/questions` | Add single or multiple questions via REST JSON body. |
+| `POST` | `/api/v1/question-sets/{set_id}/questions/upload` | Add questions via file upload (`.jsonl`, `.csv`, `.json`). |
+| `GET` | `/api/v1/question-sets/{set_id}/questions` | List questions in a set with pagination, category/level filters, and text query search. |
+| `GET` | `/api/v1/question-sets/{set_id}/questions/{qid}` | Fetch a single question by database `id` or string `question_id`. |
+| `PUT` | `/api/v1/question-sets/{set_id}/questions/{qid}` | Edit a question in a set. |
+| `DELETE` | `/api/v1/question-sets/{set_id}/questions/{qid}` | Delete a single question from a set. |
+| `POST` | `/api/v1/question-sets/{set_id}/questions/batch-delete` | Batch delete questions by a list of IDs. |
+| `GET` | `/api/v1/question-sets/{set_id}/export` | Export question set as `.jsonl` or `.csv` file download (`format=jsonl|csv`). |
+
+### Shell Scripts
+- **Submit Evaluation Job for DB Question Set**: [`scripts/send_eval_request_question_set.sh`](file:///Users/alexanghh/development/CaipeDeepevalEvaluation/scripts/send_eval_request_question_set.sh)
+- **Upload / Ingest Question Set**: [`scripts/upload_question_set.sh`](file:///Users/alexanghh/development/CaipeDeepevalEvaluation/scripts/upload_question_set.sh)
+- **List Question Sets / Questions**: [`scripts/list_question_sets.sh`](file:///Users/alexanghh/development/CaipeDeepevalEvaluation/scripts/list_question_sets.sh)
+
 ```

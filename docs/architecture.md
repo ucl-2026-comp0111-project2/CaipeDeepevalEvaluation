@@ -54,13 +54,17 @@ flowchart LR
 
 | Component | File | Responsibility |
 | --- | --- | --- |
-| REST API Evaluation Service entry point | src/deepeval_eval/api/service.py | FastAPI REST API service with Swagger UI (/docs) for async job execution, deduplication, and DB persistence. |
+| REST API Evaluation Service entry point | src/deepeval_eval/api/service.py | FastAPI REST API service with Swagger UI (/docs) for async job execution, deduplication, question set CRUD, and DB persistence. |
+| Question Sets & Questions API router | src/deepeval_eval/api/question_sets.py | REST endpoints for Question Sets and Questions CRUD, parsing, batch upload, and export. |
 | Ingestion entry point | src/deepeval_eval/ingest/ingest_cli.py | Standalone CLI entry point for dataset ingestion into CAIPE datasources. |
 | Enterprise command entry point | src/deepeval_eval/ingest/enterprise_deepeval.py | CLI for EnterpriseRAG-Bench ingestion and evaluation. |
 | HotpotQA command entry point | src/deepeval_eval/ingest/hotpotqa_deepeval.py | CLI for HotpotQA ingestion and evaluation. |
 | CAIPE client | src/deepeval_eval/clients/caipe.py | Wraps rag-server REST calls and extracts retrieved contexts and source metadata. |
 | RAG client adapter | src/deepeval_eval/clients/rag.py | Unified RAG client adapter for CAIPE and Agentic RAG endpoints. |
 | Precomputed RAG client | src/deepeval_eval/clients/oracle.py | Precomputed evaluation client handling offline or reference modes. |
+| Database Manager (Base) | src/deepeval_eval/db/db_manager.py | Base PostgreSQL connection manager delegating to domain-specific DB managers. |
+| Question DB Manager | src/deepeval_eval/db/question_db_manager.py | PostgreSQL DB manager for question_sets and questions schema, queries, search, and transactions. |
+| Evaluation DB Manager | src/deepeval_eval/db/evaluation_db_manager.py | PostgreSQL DB manager for evaluation job queue, runs, and result tables. |
 | Configuration | [src/deepeval_eval/core/config.py](file:///Users/alexanghh/development/CaipeDeepevalEvaluation/src/deepeval_eval/core/config.py) | Centralized Pydantic-based configuration management, settings objects, environment variable remapping, and secret masking. |
 | LLM adapter | src/deepeval_eval/clients/llm_client.py | Calls an OpenAI compatible LLM endpoint and adapts it to DeepEval. |
 | Shared metrics | src/deepeval_eval/core/metrics.py | Builds DeepEval metrics and computes document ID and short answer checks. |

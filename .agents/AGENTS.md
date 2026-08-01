@@ -79,8 +79,8 @@ Before committing code changes, run relevant checks:
 ## Testing & TDD Guidelines
 
 - **TDD Adoption** - Adopt Test-Driven Development (TDD) where feasible by writing tests before or alongside implementation.
-- **Mandatory Test Cases** - Always create test cases for each function written (at least one positive and one negative test per function).
-- **Target Coverage** - Maintain high unit test coverage (aiming for at least 80% coverage per file).
+- **Mandatory Test Cases** - Always create test cases for each function written (at least one positive and one negative test (or exception test) per function).
+- **Target Coverage** - Maintain high unit test coverage (at least 80% coverage per file on both lines and branches).
 
 ## Code Style
 
