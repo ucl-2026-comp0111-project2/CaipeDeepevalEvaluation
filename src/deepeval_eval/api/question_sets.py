@@ -4,7 +4,9 @@ import csv
 import io
 import json
 import logging
-from typing import Any
+import re
+from typing import Any, Self
+from urllib.parse import quote
 
 from fastapi import (
     APIRouter,
@@ -17,12 +19,16 @@ from fastapi import (
     status,
 )
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from deepeval_eval.api.auth import UserContext, get_current_user
 from deepeval_eval.db.db_manager import DatabaseManager
+from deepeval_eval.db.question_db_manager import MAX_BATCH_DELETE_ITEMS
 
 logger = logging.getLogger(__name__)
+
+MAX_UPLOAD_SIZE_BYTES = 50 * 1024 * 1024  # 50 MB limit
+CHUNK_SIZE_BYTES = 64 * 1024  # 64 KB buffer for optimal async IO throughput
 
 router = APIRouter(prefix="/question-sets", tags=["Question Sets"])
 
@@ -120,9 +126,36 @@ class QuestionListResponse(BaseModel):
 
 
 class BatchDeleteRequest(BaseModel):
-    question_ids: list[str | int] = Field(
-        ..., description="List of internal DB IDs or external question_ids to delete"
+    ids: list[int] | None = Field(
+        default=None,
+        description="List of id values to delete",
+        examples=[[101, 102, 103]],
     )
+    question_ids: list[str] | None = Field(
+        default=None,
+        description="List of question_id values to delete",
+        examples=[["hotpotqa_q123", "enterprise_doc_45"]],
+    )
+
+    @model_validator(mode="after")
+    def validate_batch_delete_bounds(self) -> Self:
+        len_ids = len(self.ids or [])
+        len_qids = len(self.question_ids or [])
+        total = len_ids + len_qids
+
+        if total == 0:
+            raise ValueError(
+                "Must provide at least one identifier in either 'ids' or 'question_ids'."
+            )
+        if (
+            len_ids > MAX_BATCH_DELETE_ITEMS
+            or len_qids > MAX_BATCH_DELETE_ITEMS
+            or total > MAX_BATCH_DELETE_ITEMS
+        ):
+            raise ValueError(
+                f"Batch delete request cannot exceed {MAX_BATCH_DELETE_ITEMS:,} total items per request."
+            )
+        return self
 
 
 class BatchDeleteResponse(BaseModel):
@@ -132,6 +165,31 @@ class BatchDeleteResponse(BaseModel):
 # ---------------------------------------------------------------------------
 # Helper Ingestion Functions
 # ---------------------------------------------------------------------------
+
+
+async def read_bounded_file(file: UploadFile, max_bytes: int | None = None) -> bytes:
+    """Read upload file stream in 64KB chunks up to max_bytes to prevent OOM memory exhaustion."""
+    limit = MAX_UPLOAD_SIZE_BYTES if max_bytes is None else max_bytes
+    uploaded_size = 0
+    chunks: list[bytes] = []
+
+    while chunk := await file.read(CHUNK_SIZE_BYTES):
+        uploaded_size += len(chunk)
+        if uploaded_size > limit:
+            max_mb = limit // (1024 * 1024)
+            filename_str = f" '{file.filename}'" if file.filename else ""
+            detail_msg = (
+                f"Uploaded file{filename_str} exceeds maximum allowed size of {max_mb} MB."
+                if max_mb > 0
+                else f"Uploaded file{filename_str} exceeds maximum allowed size limit."
+            )
+            raise HTTPException(
+                status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                detail=detail_msg,
+            )
+        chunks.append(chunk)
+
+    return b"".join(chunks)
 
 
 def parse_questions_file_content(
@@ -154,8 +212,8 @@ def parse_questions_file_content(
                 item = json.loads(line_str)
                 if isinstance(item, dict):
                     items.append(item)
-            except json.JSONDecodeError:
-                pass
+            except json.JSONDecodeError as err:
+                logger.warning("Skipping unparseable JSONL line: %s", err)
 
         if items:
             return items
@@ -243,7 +301,7 @@ async def create_question_set(
     )
 
     if file:
-        content = await file.read()
+        content = await read_bounded_file(file)
         questions = parse_questions_file_content(content, file.filename)
         if questions:
             db.questions.add_questions(qset["id"], questions)
@@ -377,7 +435,7 @@ async def upload_questions_file_to_set(
             detail=f"Question set {set_id} not found.",
         )
 
-    content = await file.read()
+    content = await read_bounded_file(file)
     questions_to_add = parse_questions_file_content(content, file.filename)
 
     if not questions_to_add:
@@ -426,62 +484,116 @@ def list_questions_in_set(
     )
 
 
-@router.get(
-    "/{set_id}/questions/{question_identifier}", response_model=QuestionResponse
-)
-def get_question(
+@router.get("/{set_id}/questions/id/{id}", response_model=QuestionResponse)
+def get_question_by_id(
     set_id: int,
-    question_identifier: str,
+    id: int,
     user: UserContext = Depends(get_current_user),
     db: DatabaseManager = Depends(get_db_manager),
 ) -> dict[str, Any]:
-    """Get a single question by DB id or question_id string."""
-    q = db.questions.get_question(set_id, question_identifier)
+    """Get a single question by id."""
+    q = db.questions.get_question_by_id(set_id, id)
     if not q:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Question '{question_identifier}' not found in question set {set_id}.",
+            detail=f"Question id={id} not found in question set {set_id}.",
+        )
+    return q
+
+
+@router.put("/{set_id}/questions/id/{id}", response_model=QuestionResponse)
+def update_question_by_id(
+    set_id: int,
+    id: int,
+    payload: QuestionUpdate,
+    user: UserContext = Depends(get_current_user),
+    db: DatabaseManager = Depends(get_db_manager),
+) -> dict[str, Any]:
+    """Edit a question by id."""
+    updated = db.questions.update_question_by_id(
+        set_id, id, payload.model_dump(exclude_unset=True)
+    )
+    if not updated:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Question id={id} not found in question set {set_id}.",
+        )
+    return updated
+
+
+@router.delete("/{set_id}/questions/id/{id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_question_by_id(
+    set_id: int,
+    id: int,
+    user: UserContext = Depends(get_current_user),
+    db: DatabaseManager = Depends(get_db_manager),
+) -> None:
+    """Delete a single question by id."""
+    success = db.questions.delete_question_by_id(set_id, id)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Question id={id} not found in question set {set_id}.",
+        )
+
+
+@router.get(
+    "/{set_id}/questions/question-id/{question_id}", response_model=QuestionResponse
+)
+def get_question_by_question_id(
+    set_id: int,
+    question_id: str,
+    user: UserContext = Depends(get_current_user),
+    db: DatabaseManager = Depends(get_db_manager),
+) -> dict[str, Any]:
+    """Get a single question by question_id."""
+    q = db.questions.get_question_by_question_id(set_id, question_id)
+    if not q:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Question question_id='{question_id}' not found in question set {set_id}.",
         )
     return q
 
 
 @router.put(
-    "/{set_id}/questions/{question_identifier}", response_model=QuestionResponse
+    "/{set_id}/questions/question-id/{question_id}", response_model=QuestionResponse
 )
-def update_question(
+def update_question_by_question_id(
     set_id: int,
-    question_identifier: str,
+    question_id: str,
     payload: QuestionUpdate,
     user: UserContext = Depends(get_current_user),
     db: DatabaseManager = Depends(get_db_manager),
 ) -> dict[str, Any]:
-    """Edit a question in a question set."""
-    updated = db.questions.update_question(
-        set_id, question_identifier, payload.model_dump(exclude_unset=True)
+    """Edit a question by question_id."""
+    updated = db.questions.update_question_by_question_id(
+        set_id, question_id, payload.model_dump(exclude_unset=True)
     )
     if not updated:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Question '{question_identifier}' not found in question set {set_id}.",
+            detail=f"Question question_id='{question_id}' not found in question set {set_id}.",
         )
     return updated
 
 
 @router.delete(
-    "/{set_id}/questions/{question_identifier}", status_code=status.HTTP_204_NO_CONTENT
+    "/{set_id}/questions/question-id/{question_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
 )
-def delete_question(
+def delete_question_by_question_id(
     set_id: int,
-    question_identifier: str,
+    question_id: str,
     user: UserContext = Depends(get_current_user),
     db: DatabaseManager = Depends(get_db_manager),
 ) -> None:
-    """Delete a question from a question set."""
-    success = db.questions.delete_question(set_id, question_identifier)
+    """Delete a single question by question_id."""
+    success = db.questions.delete_question_by_question_id(set_id, question_id)
     if not success:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Question '{question_identifier}' not found in question set {set_id}.",
+            detail=f"Question question_id='{question_id}' not found in question set {set_id}.",
         )
 
 
@@ -500,7 +612,9 @@ def batch_delete_questions(
             detail=f"Question set {set_id} not found.",
         )
 
-    deleted_count = db.questions.batch_delete_questions(set_id, payload.question_ids)
+    deleted_count = db.questions.batch_delete_questions(
+        set_id, ids=payload.ids, question_ids=payload.question_ids
+    )
     return {"deleted_count": deleted_count}
 
 
@@ -523,69 +637,88 @@ def export_question_set(
             detail=f"Question set {set_id} not found.",
         )
 
-    # Fetch all questions (up to max limit)
-    result = db.questions.list_questions(set_id=set_id, page=1, limit=10000)
-    questions = result["items"]
-
     name_clean = (
-        "".join(
-            c if c.isalnum() or c in ("-", "_") else "_" for c in qset["name"]
-        ).strip("_")
-        or "question_set"
+        re.sub(r"[^\w-]+", "_", qset["name"]).strip("_").lower() or "question_set"
+    )
+    filename_ascii = f"{name_clean}.{format}"
+    filename_encoded = quote(f"{qset['name']}.{format}")
+    content_disposition = (
+        f'attachment; filename="{filename_ascii}"; '
+        f"filename*=UTF-8''{filename_encoded}"
     )
 
     if format == "csv":
-        output = io.StringIO()
-        writer = csv.DictWriter(
-            output,
-            fieldnames=[
-                "question_id",
-                "input",
-                "expected_output",
-                "category",
-                "level",
-                "expected_doc_ids",
-            ],
-        )
-        writer.writeheader()
-        for q in questions:
-            writer.writerow(
-                {
-                    "question_id": q.get("question_id"),
-                    "input": q.get("input"),
-                    "expected_output": q.get("expected_output"),
-                    "category": q.get("category"),
-                    "level": q.get("level"),
-                    "expected_doc_ids": json.dumps(q.get("expected_doc_ids") or []),
-                }
+
+        def generate_csv():
+            output = io.StringIO()
+            writer = csv.DictWriter(
+                output,
+                fieldnames=[
+                    "question_id",
+                    "input",
+                    "expected_output",
+                    "category",
+                    "level",
+                    "expected_doc_ids",
+                ],
             )
-        output.seek(0)
-        return StreamingResponse(
-            iter([output.getvalue()]),
-            media_type="text/csv",
-            headers={"Content-Disposition": f'attachment; filename="{name_clean}.csv"'},
-        )
-    else:  # jsonl
-        lines: list[str] = []
-        for q in questions:
-            row = {
-                "question_id": q.get("question_id"),
-                "user_input": q.get("input"),
-                "reference": q.get("expected_output"),
-                "category": q.get("category"),
-                "level": q.get("level"),
-                "expected_doc_ids": q.get("expected_doc_ids") or [],
-            }
-            if q.get("context"):
-                row["context"] = q["context"]
-            if q.get("extra") and isinstance(q["extra"], dict):
-                row.update(q["extra"])
-            lines.append(json.dumps(row) + "\n")
+            writer.writeheader()
+            yield output.getvalue()
+
+            for q in db.questions.stream_questions(set_id=set_id):
+                output.seek(0)
+                output.truncate(0)
+                writer.writerow(
+                    {
+                        "question_id": q.get("question_id"),
+                        "input": q.get("input"),
+                        "expected_output": q.get("expected_output"),
+                        "category": q.get("category"),
+                        "level": q.get("level"),
+                        "expected_doc_ids": json.dumps(q.get("expected_doc_ids") or []),
+                    }
+                )
+                yield output.getvalue()
 
         return StreamingResponse(
-            iter(["".join(lines)]),
+            generate_csv(),
+            media_type="text/csv",
+            headers={"Content-Disposition": content_disposition},
+        )
+    else:  # jsonl
+        reserved_keys = {
+            "question_id",
+            "user_input",
+            "reference",
+            "category",
+            "level",
+            "expected_doc_ids",
+            "context",
+        }
+
+        def generate_jsonl():
+            for q in db.questions.stream_questions(set_id=set_id):
+                row = {
+                    "question_id": q.get("question_id"),
+                    "user_input": q.get("input"),
+                    "reference": q.get("expected_output"),
+                    "category": q.get("category"),
+                    "level": q.get("level"),
+                    "expected_doc_ids": q.get("expected_doc_ids") or [],
+                }
+                if q.get("context"):
+                    row["context"] = q["context"]
+
+                if q.get("extra") and isinstance(q["extra"], dict):
+                    for key, val in q["extra"].items():
+                        if key not in reserved_keys:
+                            row[key] = val
+                        else:
+                            row[f"extra_{key}"] = val
+                yield json.dumps(row) + "\n"
+
+        return StreamingResponse(
+            generate_jsonl(),
             media_type="application/x-ndjson",
-            headers={
-                "Content-Disposition": f'attachment; filename="{name_clean}.jsonl"'
-            },
+            headers={"Content-Disposition": content_disposition},
         )
