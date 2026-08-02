@@ -18,6 +18,11 @@ logger = logging.getLogger(__name__)
 MAX_BATCH_DELETE_ITEMS = 1000
 
 
+def _escape_like_wildcards(text: str) -> str:
+    """Escape SQL LIKE wildcard characters in user search terms."""
+    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 class QuestionDBManager:
     """PostgreSQL database manager for Question Sets and Questions."""
 
@@ -62,6 +67,22 @@ class QuestionDBManager:
                     CREATE INDEX IF NOT EXISTS idx_question_sets_name ON question_sets (name);
                     CREATE INDEX IF NOT EXISTS idx_questions_set_category ON questions (question_set_id, category);
                     CREATE INDEX IF NOT EXISTS idx_questions_set_id ON questions (question_set_id, id);
+
+                    CREATE OR REPLACE FUNCTION set_default_question_id()
+                    RETURNS TRIGGER AS $$
+                    BEGIN
+                        IF NEW.question_id IS NULL OR TRIM(NEW.question_id) = '' THEN
+                            NEW.question_id := NEW.id::text;
+                        END IF;
+                        RETURN NEW;
+                    END;
+                    $$ LANGUAGE plpgsql;
+
+                    DROP TRIGGER IF EXISTS trg_set_default_question_id ON questions;
+
+                    CREATE TRIGGER trg_set_default_question_id
+                    BEFORE INSERT ON questions
+                    FOR EACH ROW EXECUTE FUNCTION set_default_question_id();
                     """
                 )
             conn.commit()
@@ -329,7 +350,9 @@ class QuestionDBManager:
 
                     qid = item.get("question_id")
                     if not qid or not str(qid).strip():
-                        qid = f"q-{idx}"
+                        qid = None
+                    else:
+                        qid = str(qid).strip()
 
                     exp_out = item.get("expected_output") or item.get("reference")
                     category = item.get("category")
@@ -491,6 +514,9 @@ class QuestionDBManager:
         category: str | None = None,
         level: str | None = None,
         query: str | None = None,
+        question_id: str | None = None,
+        question_input: str | None = None,
+        expected_output: str | None = None,
     ) -> dict[str, Any]:
         """List questions in a question set with pagination and filters."""
         offset = (max(1, page) - 1) * limit
@@ -506,26 +532,32 @@ class QuestionDBManager:
                 if level and level.strip():
                     where_clauses.append("level = %s")
                     params.append(level.strip())
+                if question_id and question_id.strip():
+                    where_clauses.append("question_id = %s")
+                    params.append(question_id.strip())
+                if question_input and question_input.strip():
+                    where_clauses.append("input ILIKE %s ESCAPE '\\'")
+                    params.append(f"%{_escape_like_wildcards(question_input.strip())}%")
+                if expected_output and expected_output.strip():
+                    where_clauses.append("expected_output ILIKE %s ESCAPE '\\'")
+                    params.append(
+                        f"%{_escape_like_wildcards(expected_output.strip())}%"
+                    )
                 if query and query.strip():
                     where_clauses.append(
-                        "(input ILIKE %s OR expected_output ILIKE %s OR question_id ILIKE %s)"
+                        "(input ILIKE %s ESCAPE '\\' OR expected_output ILIKE %s ESCAPE '\\' OR question_id ILIKE %s ESCAPE '\\')"
                     )
-                    pat = f"%{query.strip()}%"
+                    pat = f"%{_escape_like_wildcards(query.strip())}%"
                     params.extend([pat, pat, pat])
 
                 where_sql = " WHERE " + " AND ".join(where_clauses)
 
-                # Total count
-                cur.execute(
-                    f"SELECT COUNT(*) FROM questions{where_sql};", tuple(params)
-                )
-                total = cur.fetchone()[0]
-
-                # Fetch rows
+                # Fetch rows and total count in a single pass using COUNT(*) OVER()
                 fetch_sql = f"""
                     SELECT 
                         id, question_set_id, question_id, input, expected_output,
-                        category, level, expected_doc_ids, context, extra, created_at, updated_at
+                        category, level, expected_doc_ids, context, extra, created_at, updated_at,
+                        COUNT(*) OVER() AS total_count
                     FROM questions
                     {where_sql}
                     ORDER BY id ASC
@@ -535,6 +567,22 @@ class QuestionDBManager:
                 cur.execute(fetch_sql, tuple(fetch_params))
                 rows = cur.fetchall()
 
+                if not rows:
+                    total = 0
+                    if offset > 0:
+                        cur.execute(
+                            f"SELECT COUNT(*) FROM questions{where_sql};", tuple(params)
+                        )
+                        total = cur.fetchone()[0]
+                    return {
+                        "items": [],
+                        "total": total,
+                        "page": page,
+                        "limit": limit,
+                        "total_pages": (total + limit - 1) // limit if limit > 0 else 0,
+                    }
+
+                total = rows[0][12]
                 items = [
                     {
                         "id": r[0],
@@ -613,18 +661,44 @@ class QuestionDBManager:
             if conn is not None and hasattr(conn, "close"):
                 conn.close()
 
-    def _execute_question_update(
-        self,
-        set_id: int,
-        q_identifier: int | str,
-        data: dict[str, Any],
-        key_name: str = "id",
-    ) -> dict[str, Any] | None:
-        """Helper to execute SQL update for a question by key (id or question_id)."""
-        allowed_keys = {"id", "question_id"}
-        if key_name not in allowed_keys:
-            raise ValueError(f"Invalid column update key: {key_name}")
+    def get_question_by_id(self, set_id: int, id: int) -> dict[str, Any] | None:
+        """Get a single question by id."""
+        conn = self.db_manager.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, question_set_id, question_id, input, expected_output,
+                           category, level, expected_doc_ids, context, extra, created_at, updated_at
+                    FROM questions
+                    WHERE question_set_id = %s AND id = %s;
+                    """,
+                    (set_id, id),
+                )
+                r = cur.fetchone()
+                if not r:
+                    return None
+                return {
+                    "id": r[0],
+                    "question_set_id": r[1],
+                    "question_id": r[2],
+                    "input": r[3],
+                    "expected_output": r[4],
+                    "category": r[5],
+                    "level": r[6],
+                    "expected_doc_ids": r[7] if r[7] is not None else [],
+                    "context": r[8],
+                    "extra": r[9],
+                    "created_at": r[10].isoformat() if r[10] else None,
+                    "updated_at": r[11].isoformat() if r[11] else None,
+                }
+        finally:
+            conn.close()
 
+    def update_question_by_id(
+        self, set_id: int, id: int, data: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        """Update a specific question by primary key id."""
         updates: list[str] = []
         params: list[Any] = []
 
@@ -669,32 +743,44 @@ class QuestionDBManager:
             )
 
         if not updates:
-            return (
-                self.get_question_by_id(set_id, int(q_identifier))
-                if key_name == "id"
-                else self.get_question_by_question_id(set_id, str(q_identifier))
-            )
+            return self.get_question_by_id(set_id, id)
 
         updates.append("updated_at = now()")
-        params.extend([set_id, q_identifier])
+        params.extend([set_id, id])
 
         conn = self.db_manager.get_connection()
         try:
             with conn.cursor() as cur:
-                if key_name == "id":
-                    sql = f"UPDATE questions SET {', '.join(updates)} WHERE question_set_id = %s AND id = %s RETURNING id;"
-                else:
-                    sql = f"UPDATE questions SET {', '.join(updates)} WHERE question_set_id = %s AND question_id = %s RETURNING id;"
+                sql = f"""
+                    UPDATE questions
+                    SET {", ".join(updates)}
+                    WHERE question_set_id = %s AND id = %s
+                    RETURNING id, question_set_id, question_id, input, expected_output,
+                              category, level, expected_doc_ids, context, extra, created_at, updated_at;
+                """
                 cur.execute(sql, tuple(params))
-                row = cur.fetchone()
-                if not row:
+                r = cur.fetchone()
+                if not r:
                     return None
                 cur.execute(
                     "UPDATE question_sets SET updated_at = now() WHERE id = %s;",
                     (set_id,),
                 )
                 conn.commit()
-                return self.get_question_by_id(set_id, row[0])
+                return {
+                    "id": r[0],
+                    "question_set_id": r[1],
+                    "question_id": r[2],
+                    "input": r[3],
+                    "expected_output": r[4],
+                    "category": r[5],
+                    "level": r[6],
+                    "expected_doc_ids": r[7] if r[7] is not None else [],
+                    "context": r[8],
+                    "extra": r[9],
+                    "created_at": r[10].isoformat() if r[10] else None,
+                    "updated_at": r[11].isoformat() if r[11] else None,
+                }
         except Exception:
             if conn is not None and hasattr(conn, "rollback"):
                 try:
@@ -704,90 +790,6 @@ class QuestionDBManager:
             raise
         finally:
             conn.close()
-
-    def get_question_by_id(self, set_id: int, id: int) -> dict[str, Any] | None:
-        """Get a single question by id."""
-        conn = self.db_manager.get_connection()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT id, question_set_id, question_id, input, expected_output,
-                           category, level, expected_doc_ids, context, extra, created_at, updated_at
-                    FROM questions
-                    WHERE question_set_id = %s AND id = %s;
-                    """,
-                    (set_id, id),
-                )
-                r = cur.fetchone()
-                if not r:
-                    return None
-                return {
-                    "id": r[0],
-                    "question_set_id": r[1],
-                    "question_id": r[2],
-                    "input": r[3],
-                    "expected_output": r[4],
-                    "category": r[5],
-                    "level": r[6],
-                    "expected_doc_ids": r[7] if r[7] is not None else [],
-                    "context": r[8],
-                    "extra": r[9],
-                    "created_at": r[10].isoformat() if r[10] else None,
-                    "updated_at": r[11].isoformat() if r[11] else None,
-                }
-        finally:
-            conn.close()
-
-    def get_question_by_question_id(
-        self, set_id: int, question_id: str
-    ) -> dict[str, Any] | None:
-        """Get a single question by question_id."""
-        conn = self.db_manager.get_connection()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT id, question_set_id, question_id, input, expected_output,
-                           category, level, expected_doc_ids, context, extra, created_at, updated_at
-                    FROM questions
-                    WHERE question_set_id = %s AND question_id = %s;
-                    """,
-                    (set_id, str(question_id).strip()),
-                )
-                r = cur.fetchone()
-                if not r:
-                    return None
-                return {
-                    "id": r[0],
-                    "question_set_id": r[1],
-                    "question_id": r[2],
-                    "input": r[3],
-                    "expected_output": r[4],
-                    "category": r[5],
-                    "level": r[6],
-                    "expected_doc_ids": r[7] if r[7] is not None else [],
-                    "context": r[8],
-                    "extra": r[9],
-                    "created_at": r[10].isoformat() if r[10] else None,
-                    "updated_at": r[11].isoformat() if r[11] else None,
-                }
-        finally:
-            conn.close()
-
-    def update_question_by_id(
-        self, set_id: int, id: int, data: dict[str, Any]
-    ) -> dict[str, Any] | None:
-        """Update a specific question by id."""
-        return self._execute_question_update(set_id, id, data, key_name="id")
-
-    def update_question_by_question_id(
-        self, set_id: int, question_id: str, data: dict[str, Any]
-    ) -> dict[str, Any] | None:
-        """Update a specific question by question_id."""
-        return self._execute_question_update(
-            set_id, str(question_id).strip(), data, key_name="question_id"
-        )
 
     def delete_question_by_id(self, set_id: int, id: int) -> bool:
         """Delete a single question from a set by id."""
@@ -816,92 +818,38 @@ class QuestionDBManager:
         finally:
             conn.close()
 
-    def delete_question_by_question_id(self, set_id: int, question_id: str) -> bool:
-        """Delete a single question from a set by question_id."""
+    def batch_delete_questions(self, set_id: int, ids: list[int]) -> int:
+        """Atomically delete questions by db_ids in a single query."""
+        if not ids:
+            return 0
+
+        parsed_ids: list[int] = []
+        for i in ids:
+            try:
+                parsed_ids.append(int(i))
+            except (ValueError, TypeError):
+                pass
+        ids_clean = list(dict.fromkeys(parsed_ids))
+
+        if len(ids_clean) > MAX_BATCH_DELETE_ITEMS:
+            raise ValueError(
+                f"Batch delete payload exceeds limit of {MAX_BATCH_DELETE_ITEMS:,} items."
+            )
+
+        if not ids_clean:
+            return 0
+
         conn = self.db_manager.get_connection()
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    "DELETE FROM questions WHERE question_set_id = %s AND question_id = %s RETURNING id;",
-                    (set_id, str(question_id).strip()),
+                    """
+                    DELETE FROM questions
+                    WHERE question_set_id = %s AND id = ANY(%s)
+                    RETURNING id;
+                    """,
+                    (set_id, ids_clean),
                 )
-                row = cur.fetchone()
-                if row:
-                    cur.execute(
-                        "UPDATE question_sets SET updated_at = now() WHERE id = %s;",
-                        (set_id,),
-                    )
-                conn.commit()
-                return row is not None
-        except Exception:
-            if conn is not None and hasattr(conn, "rollback"):
-                try:
-                    conn.rollback()
-                except Exception:
-                    pass
-            raise
-        finally:
-            conn.close()
-
-    def batch_delete_questions(
-        self,
-        set_id: int,
-        ids: list[int] | None = None,
-        question_ids: list[str] | None = None,
-    ) -> int:
-        """Atomically delete questions by db_ids, question_ids, or both in a single query."""
-        ids_clean: list[int] = []
-        if ids:
-            parsed_ids: list[int] = []
-            for i in ids:
-                try:
-                    parsed_ids.append(int(i))
-                except (ValueError, TypeError):
-                    pass
-            ids_clean = list(dict.fromkeys(parsed_ids))
-
-        qids_clean: list[str] = []
-        if question_ids:
-            raw_qids = [
-                str(q).strip() for q in question_ids if q is not None and str(q).strip()
-            ]
-            qids_clean = list(dict.fromkeys(raw_qids))
-
-        if len(ids_clean) + len(qids_clean) > MAX_BATCH_DELETE_ITEMS:
-            raise ValueError(
-                f"Batch delete payload exceeds the maximum limit of {MAX_BATCH_DELETE_ITEMS:,} total items."
-            )
-
-        if not ids_clean and not qids_clean:
-            return 0
-
-        where_conditions: list[str] = []
-        params: list[Any] = [set_id]
-
-        if ids_clean:
-            where_conditions.append("id = ANY(%s)")
-            params.append(ids_clean)
-
-        if qids_clean:
-            where_conditions.append("question_id = ANY(%s)")
-            params.append(qids_clean)
-
-        sql = f"""
-            DELETE FROM questions
-            WHERE question_set_id = %s
-              AND ({" OR ".join(where_conditions)})
-            RETURNING id;
-        """
-
-        if len(params) != 1 + len(where_conditions):
-            raise RuntimeError(
-                "Mismatched parameter bindings during batch delete SQL construction."
-            )
-
-        conn = self.db_manager.get_connection()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(sql, tuple(params))
                 deleted_rows = cur.fetchall()
                 deleted_count = len(deleted_rows)
                 if deleted_count > 0:
@@ -920,13 +868,3 @@ class QuestionDBManager:
             raise
         finally:
             conn.close()
-
-    def batch_delete_questions_by_ids(self, set_id: int, ids: list[int]) -> int:
-        """Delete multiple questions in a set by IDs."""
-        return self.batch_delete_questions(set_id, ids=ids)
-
-    def batch_delete_questions_by_question_ids(
-        self, set_id: int, question_ids: list[str]
-    ) -> int:
-        """Delete multiple questions in a set by question_ids."""
-        return self.batch_delete_questions(set_id, question_ids=question_ids)

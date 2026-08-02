@@ -5,7 +5,7 @@ import io
 import json
 import logging
 import re
-from typing import Any, Self
+from typing import Any
 from urllib.parse import quote
 
 from fastapi import (
@@ -19,7 +19,7 @@ from fastapi import (
     status,
 )
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 
 from deepeval_eval.api.auth import UserContext, get_current_user
 from deepeval_eval.db.db_manager import DatabaseManager
@@ -126,36 +126,13 @@ class QuestionListResponse(BaseModel):
 
 
 class BatchDeleteRequest(BaseModel):
-    ids: list[int] | None = Field(
-        default=None,
-        description="List of id values to delete",
+    ids: list[int] = Field(
+        ...,
+        min_length=1,
+        max_length=MAX_BATCH_DELETE_ITEMS,
+        description="List of integer IDs to delete",
         examples=[[101, 102, 103]],
     )
-    question_ids: list[str] | None = Field(
-        default=None,
-        description="List of question_id values to delete",
-        examples=[["hotpotqa_q123", "enterprise_doc_45"]],
-    )
-
-    @model_validator(mode="after")
-    def validate_batch_delete_bounds(self) -> Self:
-        len_ids = len(self.ids or [])
-        len_qids = len(self.question_ids or [])
-        total = len_ids + len_qids
-
-        if total == 0:
-            raise ValueError(
-                "Must provide at least one identifier in either 'ids' or 'question_ids'."
-            )
-        if (
-            len_ids > MAX_BATCH_DELETE_ITEMS
-            or len_qids > MAX_BATCH_DELETE_ITEMS
-            or total > MAX_BATCH_DELETE_ITEMS
-        ):
-            raise ValueError(
-                f"Batch delete request cannot exceed {MAX_BATCH_DELETE_ITEMS:,} total items per request."
-            )
-        return self
 
 
 class BatchDeleteResponse(BaseModel):
@@ -461,7 +438,17 @@ def list_questions_in_set(
     category: str | None = Query(default=None, description="Filter by category"),
     level: str | None = Query(default=None, description="Filter by difficulty level"),
     query: str | None = Query(
-        default=None, description="Search query in input or question_id"
+        default=None,
+        description="Global search query across input, expected_output, and question_id",
+    ),
+    question_id: str | None = Query(
+        default=None, description="Filter specifically by exact question_id"
+    ),
+    question_input: str | None = Query(
+        default=None, description="Filter specifically by input text"
+    ),
+    expected_output: str | None = Query(
+        default=None, description="Filter specifically by expected output"
     ),
     user: UserContext = Depends(get_current_user),
     db: DatabaseManager = Depends(get_db_manager),
@@ -481,10 +468,13 @@ def list_questions_in_set(
         category=category,
         level=level,
         query=query,
+        question_id=question_id,
+        question_input=question_input,
+        expected_output=expected_output,
     )
 
 
-@router.get("/{set_id}/questions/id/{id}", response_model=QuestionResponse)
+@router.get("/{set_id}/questions/{id}", response_model=QuestionResponse)
 def get_question_by_id(
     set_id: int,
     id: int,
@@ -501,7 +491,7 @@ def get_question_by_id(
     return q
 
 
-@router.put("/{set_id}/questions/id/{id}", response_model=QuestionResponse)
+@router.put("/{set_id}/questions/{id}", response_model=QuestionResponse)
 def update_question_by_id(
     set_id: int,
     id: int,
@@ -521,7 +511,7 @@ def update_question_by_id(
     return updated
 
 
-@router.delete("/{set_id}/questions/id/{id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{set_id}/questions/{id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_question_by_id(
     set_id: int,
     id: int,
@@ -534,66 +524,6 @@ def delete_question_by_id(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Question id={id} not found in question set {set_id}.",
-        )
-
-
-@router.get(
-    "/{set_id}/questions/question-id/{question_id}", response_model=QuestionResponse
-)
-def get_question_by_question_id(
-    set_id: int,
-    question_id: str,
-    user: UserContext = Depends(get_current_user),
-    db: DatabaseManager = Depends(get_db_manager),
-) -> dict[str, Any]:
-    """Get a single question by question_id."""
-    q = db.questions.get_question_by_question_id(set_id, question_id)
-    if not q:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Question question_id='{question_id}' not found in question set {set_id}.",
-        )
-    return q
-
-
-@router.put(
-    "/{set_id}/questions/question-id/{question_id}", response_model=QuestionResponse
-)
-def update_question_by_question_id(
-    set_id: int,
-    question_id: str,
-    payload: QuestionUpdate,
-    user: UserContext = Depends(get_current_user),
-    db: DatabaseManager = Depends(get_db_manager),
-) -> dict[str, Any]:
-    """Edit a question by question_id."""
-    updated = db.questions.update_question_by_question_id(
-        set_id, question_id, payload.model_dump(exclude_unset=True)
-    )
-    if not updated:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Question question_id='{question_id}' not found in question set {set_id}.",
-        )
-    return updated
-
-
-@router.delete(
-    "/{set_id}/questions/question-id/{question_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-)
-def delete_question_by_question_id(
-    set_id: int,
-    question_id: str,
-    user: UserContext = Depends(get_current_user),
-    db: DatabaseManager = Depends(get_db_manager),
-) -> None:
-    """Delete a single question by question_id."""
-    success = db.questions.delete_question_by_question_id(set_id, question_id)
-    if not success:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Question question_id='{question_id}' not found in question set {set_id}.",
         )
 
 
@@ -612,10 +542,14 @@ def batch_delete_questions(
             detail=f"Question set {set_id} not found.",
         )
 
-    deleted_count = db.questions.batch_delete_questions(
-        set_id, ids=payload.ids, question_ids=payload.question_ids
-    )
-    return {"deleted_count": deleted_count}
+    try:
+        deleted_count = db.questions.batch_delete_questions(set_id, ids=payload.ids)
+        return {"deleted_count": deleted_count}
+    except ValueError as val_err:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(val_err),
+        )
 
 
 @router.get("/{set_id}/export")

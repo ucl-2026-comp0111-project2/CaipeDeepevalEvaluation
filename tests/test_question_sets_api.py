@@ -182,7 +182,17 @@ def mock_db_manager():
             inserted.append(q_rec)
         return inserted
 
-    def list_q(set_id, page=1, limit=50, category=None, level=None, query=None):
+    def list_q(
+        set_id,
+        page=1,
+        limit=50,
+        category=None,
+        level=None,
+        query=None,
+        question_id=None,
+        question_input=None,
+        expected_output=None,
+    ):
         if set_id not in question_sets_store:
             return {
                 "items": [],
@@ -196,8 +206,28 @@ def mock_db_manager():
             q_list = [q for q in q_list if q.get("category") == category]
         if level:
             q_list = [q for q in q_list if q.get("level") == level]
+        if question_id:
+            q_list = [q for q in q_list if q.get("question_id") == question_id]
+        if question_input:
+            q_list = [
+                q
+                for q in q_list
+                if question_input.lower() in (q.get("input") or "").lower()
+            ]
+        if expected_output:
+            q_list = [
+                q
+                for q in q_list
+                if expected_output.lower() in (q.get("expected_output") or "").lower()
+            ]
         if query:
-            q_list = [q for q in q_list if query.lower() in q["input"].lower()]
+            q_list = [
+                q
+                for q in q_list
+                if query.lower() in (q.get("input") or "").lower()
+                or query.lower() in (q.get("expected_output") or "").lower()
+                or query.lower() in (q.get("question_id") or "").lower()
+            ]
         total = len(q_list)
         return {
             "items": q_list,
@@ -252,18 +282,11 @@ def mock_db_manager():
     mock_q_db.list_questions.side_effect = list_q
     mock_q_db.stream_questions.side_effect = stream_q
     mock_q_db.get_question_by_id.side_effect = get_q
-    mock_q_db.get_question_by_question_id.side_effect = get_q
     mock_q_db.update_question_by_id.side_effect = update_q
-    mock_q_db.update_question_by_question_id.side_effect = update_q
     mock_q_db.delete_question_by_id.side_effect = delete_q
-    mock_q_db.delete_question_by_question_id.side_effect = delete_q
-    mock_q_db.batch_delete_questions.side_effect = (
-        lambda set_id, ids=None, question_ids=None: batch_delete_q(
-            set_id, (ids or []) + (question_ids or [])
-        )
+    mock_q_db.batch_delete_questions.side_effect = lambda set_id, ids=None: (
+        batch_delete_q(set_id, ids or [])
     )
-    mock_q_db.batch_delete_questions_by_ids.side_effect = batch_delete_q
-    mock_q_db.batch_delete_questions_by_question_ids.side_effect = batch_delete_q
 
     mock_db.questions = mock_q_db
     return mock_db
@@ -338,42 +361,30 @@ def test_question_sets_full_crud_lifecycle(mock_db_manager):
         q_list_data = res.json()
         assert q_list_data["total"] == 3
 
-        # 6. Get single question by question_id
-        res = client.get(f"/api/v1/question-sets/{set_id}/questions/question-id/q-101")
+        # 6. Get single question by id
+        res = client.get(f"/api/v1/question-sets/{set_id}/questions/1")
         assert res.status_code == 200
         assert res.json()["input"] == "Where was the 2024 Summer Olympics held?"
 
-        # 6b. Get single question by id
-        res = client.get(f"/api/v1/question-sets/{set_id}/questions/id/1")
-        assert res.status_code == 200
-
-        # 7. Edit a question via explicit sub-path
+        # 7. Edit a question by id
         res = client.put(
-            f"/api/v1/question-sets/{set_id}/questions/question-id/q-101",
+            f"/api/v1/question-sets/{set_id}/questions/1",
             json={"level": "hard", "expected_output": "Paris"},
         )
         assert res.status_code == 200
         assert res.json()["level"] == "hard"
 
-        # 8. Delete a single question via explicit sub-path
-        res = client.delete(
-            f"/api/v1/question-sets/{set_id}/questions/question-id/q-102"
-        )
+        # 8. Delete a single question by id
+        res = client.delete(f"/api/v1/question-sets/{set_id}/questions/2")
         assert res.status_code == 204
 
-        # 9. Batch delete questions (via question_ids and ids)
+        # 9. Batch delete questions by ids
         res = client.post(
             f"/api/v1/question-sets/{set_id}/questions/batch-delete",
-            json={"question_ids": ["q-103"]},
+            json={"ids": [3]},
         )
         assert res.status_code == 200
         assert res.json()["deleted_count"] == 1
-
-        res_db_ids = client.post(
-            f"/api/v1/question-sets/{set_id}/questions/batch-delete",
-            json={"ids": [103]},
-        )
-        assert res_db_ids.status_code == 200
 
         # 10. Verify export endpoints (JSONL & CSV)
         res_jsonl = client.get(f"/api/v1/question-sets/{set_id}/export?format=jsonl")
@@ -443,7 +454,7 @@ def test_question_sets_negative_cases(mock_db_manager):
         # 7. Batch delete in non-existent set -> 404
         res = client.post(
             "/api/v1/question-sets/999/questions/batch-delete",
-            json={"question_ids": ["q-101"]},
+            json={"ids": [101]},
         )
         assert res.status_code == 404
 
@@ -499,23 +510,13 @@ def test_question_sets_batch_delete_max_length_limit(mock_db_manager):
 
     app.dependency_overrides[get_db_manager] = lambda: mock_db_manager
     try:
-        # 1. Single array with 1001 items -> 422
+        # Single array with 1001 items -> 422
         oversized_ids = list(range(1001))
         res = client.post(
             "/api/v1/question-sets/1/questions/batch-delete",
             json={"ids": oversized_ids},
         )
         assert res.status_code == 422
-
-        # 2. Combined arrays (600 ids + 600 question_ids = 1200 total) -> 422
-        res_combined = client.post(
-            "/api/v1/question-sets/1/questions/batch-delete",
-            json={
-                "ids": list(range(600)),
-                "question_ids": [f"q-{i}" for i in range(600)],
-            },
-        )
-        assert res_combined.status_code == 422
     finally:
         app.dependency_overrides.clear()
 
@@ -568,5 +569,82 @@ def test_question_sets_export_key_collision_and_rfc5987_headers(mock_db_manager)
         assert exported_data["custom_field"] == "safe-value"
         assert exported_data["extra_question_id"] == "malicious-qid"
         assert exported_data["extra_user_input"] == "malicious-input"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_question_sets_hybrid_search(mock_db_manager):
+    """Test dedicated hybrid search filter parameters (question_id, question_input, expected_output)."""
+    from deepeval_eval.api.question_sets import get_db_manager
+
+    app.dependency_overrides[get_db_manager] = lambda: mock_db_manager
+    try:
+        create_res = client.post(
+            "/api/v1/question-sets", data={"name": "Search Test Set"}
+        )
+        set_id = create_res.json()["id"]
+
+        client.post(
+            f"/api/v1/question-sets/{set_id}/questions",
+            json=[
+                {
+                    "question_id": "qid-001",
+                    "input": "Where is Paris?",
+                    "expected_output": "France",
+                },
+                {
+                    "question_id": "qid-002",
+                    "input": "What is 2+2?",
+                    "expected_output": "4",
+                },
+            ],
+        )
+
+        # 1. Filter by question_id (exact match)
+        res = client.get(
+            f"/api/v1/question-sets/{set_id}/questions?question_id=qid-001"
+        )
+        assert res.status_code == 200
+        assert res.json()["total"] == 1
+        assert res.json()["items"][0]["question_id"] == "qid-001"
+
+        # 2. Filter by question_input
+        res = client.get(
+            f"/api/v1/question-sets/{set_id}/questions?question_input=Paris"
+        )
+        assert res.status_code == 200
+        assert res.json()["total"] == 1
+        assert res.json()["items"][0]["question_id"] == "qid-001"
+
+        # 3. Filter by expected_output
+        res = client.get(
+            f"/api/v1/question-sets/{set_id}/questions?expected_output=France"
+        )
+        assert res.status_code == 200
+        assert res.json()["total"] == 1
+        assert res.json()["items"][0]["question_id"] == "qid-001"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_question_sets_batch_delete_value_error_handling(mock_db_manager):
+    """Test that ValueError raised by DB layer during batch delete returns HTTP 400."""
+    from unittest.mock import MagicMock
+    from deepeval_eval.api.question_sets import get_db_manager
+
+    mock_db = MagicMock()
+    mock_db.questions.get_question_set.return_value = {"id": 1, "name": "Test"}
+    mock_db.questions.batch_delete_questions.side_effect = ValueError(
+        "Batch delete payload exceeds limit."
+    )
+
+    app.dependency_overrides[get_db_manager] = lambda: mock_db
+    try:
+        res = client.post(
+            "/api/v1/question-sets/1/questions/batch-delete",
+            json={"ids": [1, 2, 3]},
+        )
+        assert res.status_code == 400
+        assert res.json()["detail"] == "Batch delete payload exceeds limit."
     finally:
         app.dependency_overrides.clear()
