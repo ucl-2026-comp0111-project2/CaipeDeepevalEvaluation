@@ -77,9 +77,9 @@ if [ -z "$POSTGRES_PASSWORD" ] && command -v kubectl >/dev/null 2>&1; then
   fi
 fi
 
-# PostgreSQL Database Configuration Defaults (NodePort 30543 on K3s node 192.168.8.132)
-export POSTGRES_HOST="${POSTGRES_HOST:-192.168.8.132}"
-export POSTGRES_PORT="${POSTGRES_PORT:-30543}"
+# PostgreSQL Database Configuration Defaults
+export POSTGRES_HOST="${POSTGRES_HOST:-localhost}"
+export POSTGRES_PORT="${POSTGRES_PORT:-5432}"
 export POSTGRES_DB="${POSTGRES_DB:-caipe_eval}"
 export POSTGRES_USER="${POSTGRES_USER:-postgres}"
 
