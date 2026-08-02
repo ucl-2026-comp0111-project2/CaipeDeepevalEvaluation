@@ -240,6 +240,9 @@ def mock_db_manager():
                 cnt += 1
         return cnt
 
+    def stream_q(set_id, batch_size=1000):
+        yield from questions_store.get(set_id, [])
+
     mock_q_db.create_question_set.side_effect = create_set
     mock_q_db.list_question_sets.side_effect = list_sets
     mock_q_db.get_question_set.side_effect = get_set
@@ -247,10 +250,20 @@ def mock_db_manager():
     mock_q_db.delete_question_set.side_effect = delete_set
     mock_q_db.add_questions.side_effect = add_q
     mock_q_db.list_questions.side_effect = list_q
-    mock_q_db.get_question.side_effect = get_q
-    mock_q_db.update_question.side_effect = update_q
-    mock_q_db.delete_question.side_effect = delete_q
-    mock_q_db.batch_delete_questions.side_effect = batch_delete_q
+    mock_q_db.stream_questions.side_effect = stream_q
+    mock_q_db.get_question_by_id.side_effect = get_q
+    mock_q_db.get_question_by_question_id.side_effect = get_q
+    mock_q_db.update_question_by_id.side_effect = update_q
+    mock_q_db.update_question_by_question_id.side_effect = update_q
+    mock_q_db.delete_question_by_id.side_effect = delete_q
+    mock_q_db.delete_question_by_question_id.side_effect = delete_q
+    mock_q_db.batch_delete_questions.side_effect = (
+        lambda set_id, ids=None, question_ids=None: batch_delete_q(
+            set_id, (ids or []) + (question_ids or [])
+        )
+    )
+    mock_q_db.batch_delete_questions_by_ids.side_effect = batch_delete_q
+    mock_q_db.batch_delete_questions_by_question_ids.side_effect = batch_delete_q
 
     mock_db.questions = mock_q_db
     return mock_db
@@ -326,29 +339,41 @@ def test_question_sets_full_crud_lifecycle(mock_db_manager):
         assert q_list_data["total"] == 3
 
         # 6. Get single question by question_id
-        res = client.get(f"/api/v1/question-sets/{set_id}/questions/q-101")
+        res = client.get(f"/api/v1/question-sets/{set_id}/questions/question-id/q-101")
         assert res.status_code == 200
         assert res.json()["input"] == "Where was the 2024 Summer Olympics held?"
 
-        # 7. Edit a question
+        # 6b. Get single question by id
+        res = client.get(f"/api/v1/question-sets/{set_id}/questions/id/1")
+        assert res.status_code == 200
+
+        # 7. Edit a question via explicit sub-path
         res = client.put(
-            f"/api/v1/question-sets/{set_id}/questions/q-101",
+            f"/api/v1/question-sets/{set_id}/questions/question-id/q-101",
             json={"level": "hard", "expected_output": "Paris"},
         )
         assert res.status_code == 200
         assert res.json()["level"] == "hard"
 
-        # 8. Delete a single question
-        res = client.delete(f"/api/v1/question-sets/{set_id}/questions/q-102")
+        # 8. Delete a single question via explicit sub-path
+        res = client.delete(
+            f"/api/v1/question-sets/{set_id}/questions/question-id/q-102"
+        )
         assert res.status_code == 204
 
-        # 9. Batch delete questions
+        # 9. Batch delete questions (via question_ids and ids)
         res = client.post(
             f"/api/v1/question-sets/{set_id}/questions/batch-delete",
             json={"question_ids": ["q-103"]},
         )
         assert res.status_code == 200
         assert res.json()["deleted_count"] == 1
+
+        res_db_ids = client.post(
+            f"/api/v1/question-sets/{set_id}/questions/batch-delete",
+            json={"ids": [103]},
+        )
+        assert res_db_ids.status_code == 200
 
         # 10. Verify export endpoints (JSONL & CSV)
         res_jsonl = client.get(f"/api/v1/question-sets/{set_id}/export?format=jsonl")
@@ -362,10 +387,9 @@ def test_question_sets_full_crud_lifecycle(mock_db_manager):
         # 11. Submit evaluation job for Question Set ID
         res = client.post(
             f"/eval/jobs/question-sets/{set_id}",
-            json={"top_k": 2, "max_items": 1},
+            json={"eval_name": "qset_eval"},
         )
         assert res.status_code == 202
-        assert "job_id" in res.json()
 
         # 12. Delete entire question set
         res = client.delete(f"/api/v1/question-sets/{set_id}")
@@ -378,29 +402,32 @@ def test_question_sets_full_crud_lifecycle(mock_db_manager):
         app.dependency_overrides.clear()
 
 
-def test_question_sets_negative_api_endpoints(mock_db_manager):
-    """Test all negative and error status codes (404 Not Found, 400 Bad Request) across API endpoints."""
+def test_question_sets_negative_cases(mock_db_manager):
+    """Test negative cases (404 / 400 / 422) for question set endpoints."""
     from deepeval_eval.api.question_sets import get_db_manager
 
     app.dependency_overrides[get_db_manager] = lambda: mock_db_manager
     try:
-        # 1. GET non-existent set -> 404
+        # 1. Non-existent question set -> 404
         res = client.get("/api/v1/question-sets/999")
         assert res.status_code == 404
 
-        # 2. PUT non-existent set -> 404
-        res = client.put("/api/v1/question-sets/999", json={"name": "Updated"})
+        # 2. Update non-existent set -> 404
+        res = client.put("/api/v1/question-sets/999", json={"name": "Ghost"})
         assert res.status_code == 404
 
-        # 3. DELETE non-existent set -> 404
+        # 3. Delete non-existent set -> 404
         res = client.delete("/api/v1/question-sets/999")
         assert res.status_code == 404
 
-        # 4. POST questions to non-existent set -> 404
-        res = client.post("/api/v1/question-sets/999/questions", json={"input": "Test"})
+        # 4. Add questions to non-existent set -> 404
+        res = client.post(
+            "/api/v1/question-sets/999/questions",
+            json=[{"input": "Test"}],
+        )
         assert res.status_code == 404
 
-        # 5. POST upload file to non-existent set -> 404
+        # 5. Upload file to non-existent set -> 404
         res = client.post(
             "/api/v1/question-sets/999/questions/upload",
             files={
@@ -416,16 +443,130 @@ def test_question_sets_negative_api_endpoints(mock_db_manager):
         # 7. Batch delete in non-existent set -> 404
         res = client.post(
             "/api/v1/question-sets/999/questions/batch-delete",
-            json={"question_ids": [1]},
+            json={"question_ids": ["q-101"]},
         )
         assert res.status_code == 404
 
-        # 8. Export non-existent set -> 404
+        # 8. Batch delete with empty payload -> 422 validation error
+        res = client.post(
+            "/api/v1/question-sets/1/questions/batch-delete",
+            json={},
+        )
+        assert res.status_code == 422
+
+        # 9. Export non-existent set -> 404
         res = client.get("/api/v1/question-sets/999/export")
         assert res.status_code == 404
 
-        # 9. Submit eval job for non-existent set -> 404
+        # 10. Submit eval job for non-existent set -> 404
         res = client.post("/eval/jobs/question-sets/999")
         assert res.status_code == 404
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_question_sets_file_upload_size_limit(mock_db_manager):
+    """Test that file uploads exceeding MAX_UPLOAD_SIZE_BYTES trigger HTTP 413."""
+    from unittest.mock import patch
+
+    from deepeval_eval.api.question_sets import get_db_manager
+
+    app.dependency_overrides[get_db_manager] = lambda: mock_db_manager
+    try:
+        # Create question set first
+        create_res = client.post(
+            "/api/v1/question-sets", data={"name": "Size Limit Test Set"}
+        )
+        assert create_res.status_code == 201
+        set_id = create_res.json()["id"]
+
+        # Patch MAX_UPLOAD_SIZE_BYTES to 20 bytes for fast test execution
+        with patch("deepeval_eval.api.question_sets.MAX_UPLOAD_SIZE_BYTES", 20):
+            file_bytes = b'{"question_id": "q-101", "user_input": "Very long payload text exceeding max bytes limit"}\n'
+            res = client.post(
+                f"/api/v1/question-sets/{set_id}/questions/upload",
+                files={"file": ("batch.jsonl", file_bytes, "application/x-ndjson")},
+            )
+            assert res.status_code == 413
+            assert "exceeds maximum allowed size" in res.json()["detail"]
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_question_sets_batch_delete_max_length_limit(mock_db_manager):
+    """Test that batch delete payloads exceeding 1000 items trigger HTTP 422 validation error."""
+    from deepeval_eval.api.question_sets import get_db_manager
+
+    app.dependency_overrides[get_db_manager] = lambda: mock_db_manager
+    try:
+        # 1. Single array with 1001 items -> 422
+        oversized_ids = list(range(1001))
+        res = client.post(
+            "/api/v1/question-sets/1/questions/batch-delete",
+            json={"ids": oversized_ids},
+        )
+        assert res.status_code == 422
+
+        # 2. Combined arrays (600 ids + 600 question_ids = 1200 total) -> 422
+        res_combined = client.post(
+            "/api/v1/question-sets/1/questions/batch-delete",
+            json={
+                "ids": list(range(600)),
+                "question_ids": [f"q-{i}" for i in range(600)],
+            },
+        )
+        assert res_combined.status_code == 422
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_question_sets_export_key_collision_and_rfc5987_headers(mock_db_manager):
+    """Test export endpoint handles reserved key collisions in extra metadata and complies with RFC 5987 content-disposition header."""
+    import json
+
+    from deepeval_eval.api.question_sets import get_db_manager
+
+    # Setup custom question stream returning colliding 'extra' keys
+    def stream_q_collision(set_id):
+        yield {
+            "id": 1,
+            "question_set_id": set_id,
+            "question_id": "orig-qid",
+            "input": "orig-input",
+            "expected_output": "orig-ref",
+            "category": "eval",
+            "level": "easy",
+            "expected_doc_ids": ["doc-1"],
+            "extra": {
+                "question_id": "malicious-qid",
+                "user_input": "malicious-input",
+                "custom_field": "safe-value",
+            },
+        }
+
+    mock_db_manager.questions.stream_questions.side_effect = stream_q_collision
+    app.dependency_overrides[get_db_manager] = lambda: mock_db_manager
+    try:
+        create_res = client.post(
+            "/api/v1/question-sets", data={"name": "Benchmark Set 1"}
+        )
+        assert create_res.status_code == 201
+        set_id = create_res.json()["id"]
+
+        res = client.get(f"/api/v1/question-sets/{set_id}/export?format=jsonl")
+        assert res.status_code == 200
+
+        # Check RFC 5987 Content-Disposition header format
+        cd_header = res.headers["content-disposition"]
+        assert "attachment; filename=" in cd_header
+        assert "filename*=UTF-8''" in cd_header
+
+        # Parse exported line
+        exported_data = json.loads(res.text.strip())
+        assert exported_data["question_id"] == "orig-qid"
+        assert exported_data["user_input"] == "orig-input"
+        assert exported_data["custom_field"] == "safe-value"
+        assert exported_data["extra_question_id"] == "malicious-qid"
+        assert exported_data["extra_user_input"] == "malicious-input"
     finally:
         app.dependency_overrides.clear()

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -125,21 +125,29 @@ def test_question_db_manager_delete_question_set_negative():
 def test_question_db_manager_add_questions_negative_non_existent_set():
     """Verify add_questions raises ValueError when set_id does not exist."""
     mock_base_db = MagicMock(spec=DatabaseManager)
+    mock_conn = MagicMock()
+    mock_cur = MagicMock()
+    mock_cur.fetchone.return_value = None
+    mock_conn.cursor.return_value.__enter__.return_value = mock_cur
+    mock_base_db.get_connection.return_value = mock_conn
 
     manager = QuestionDBManager(mock_base_db)
-    with patch.object(manager, "get_question_set", return_value=None):
-        with pytest.raises(ValueError, match="does not exist"):
-            manager.add_questions(set_id=999, questions_data=[{"input": "Test"}])
+    with pytest.raises(ValueError, match="does not exist"):
+        manager.add_questions(set_id=999, questions_data=[{"input": "Test"}])
 
 
 def test_question_db_manager_add_questions_negative_missing_input():
     """Verify add_questions raises ValueError when question item lacks input field."""
     mock_base_db = MagicMock(spec=DatabaseManager)
+    mock_conn = MagicMock()
+    mock_cur = MagicMock()
+    mock_cur.fetchone.return_value = (1,)
+    mock_conn.cursor.return_value.__enter__.return_value = mock_cur
+    mock_base_db.get_connection.return_value = mock_conn
 
     manager = QuestionDBManager(mock_base_db)
-    with patch.object(manager, "get_question_set", return_value={"id": 1}):
-        with pytest.raises(ValueError, match="missing required field 'input'"):
-            manager.add_questions(set_id=1, questions_data=[{"category": "test"}])
+    with pytest.raises(ValueError, match="missing required field 'input'"):
+        manager.add_questions(set_id=1, questions_data=[{"category": "test"}])
 
 
 def test_question_db_manager_get_question_negative():
@@ -153,19 +161,73 @@ def test_question_db_manager_get_question_negative():
     mock_base_db.get_connection.return_value = mock_conn
 
     manager = QuestionDBManager(mock_base_db)
-    res = manager.get_question(set_id=1, question_identifier="non_existent_q")
+    res = manager.get_question_by_question_id(set_id=1, question_id="non_existent_q")
 
     assert res is None
 
 
 def test_question_db_manager_batch_delete_questions_negative_empty():
-    """Verify batch_delete_questions returns 0 when empty list of identifiers is provided."""
+    """Verify batch_delete methods return 0 when empty list of identifiers is provided."""
     mock_base_db = MagicMock(spec=DatabaseManager)
 
     manager = QuestionDBManager(mock_base_db)
-    deleted_count = manager.batch_delete_questions(set_id=1, identifiers=[])
+    assert manager.batch_delete_questions_by_ids(set_id=1, ids=[]) == 0
+    assert (
+        manager.batch_delete_questions_by_question_ids(set_id=1, question_ids=[]) == 0
+    )
 
-    assert deleted_count == 0
+
+def test_question_db_manager_batch_delete_questions_by_ids_positive():
+    """Verify batch_delete_questions_by_ids executes correct query for integer PKs."""
+    mock_base_db = MagicMock(spec=DatabaseManager)
+    mock_conn = MagicMock()
+    mock_cur = MagicMock()
+    mock_cur.fetchall.return_value = [(1,), (2,)]
+    mock_conn.cursor.return_value.__enter__.return_value = mock_cur
+    mock_base_db.get_connection.return_value = mock_conn
+
+    manager = QuestionDBManager(mock_base_db)
+    count = manager.batch_delete_questions_by_ids(set_id=10, ids=[1, 2])
+
+    assert count == 2
+    executed_sql = mock_cur.execute.call_args_list[0][0][0]
+    assert "id = ANY(%s)" in executed_sql
+    assert "WHERE question_set_id = %s" in executed_sql
+
+
+def test_question_db_manager_batch_delete_questions_by_question_ids_positive():
+    """Verify batch_delete_questions_by_question_ids executes correct query for string question_ids."""
+    mock_base_db = MagicMock(spec=DatabaseManager)
+    mock_conn = MagicMock()
+    mock_cur = MagicMock()
+    mock_cur.fetchall.return_value = [(101,)]
+    mock_conn.cursor.return_value.__enter__.return_value = mock_cur
+    mock_base_db.get_connection.return_value = mock_conn
+
+    manager = QuestionDBManager(mock_base_db)
+    count = manager.batch_delete_questions_by_question_ids(
+        set_id=5, question_ids=["q_alpha", "q_beta"]
+    )
+
+    assert count == 1
+    executed_sql = mock_cur.execute.call_args_list[0][0][0]
+    assert "question_id = ANY(%s)" in executed_sql
+    assert "WHERE question_set_id = %s" in executed_sql
+
+
+def test_question_db_manager_batch_delete_oversized_payload_raises_value_error():
+    """Verify batch_delete_questions raises ValueError when payload exceeds 1000 items."""
+    import pytest
+
+    mock_base_db = MagicMock(spec=DatabaseManager)
+    manager = QuestionDBManager(mock_base_db)
+
+    oversized_ids = list(range(1001))
+    with pytest.raises(
+        ValueError,
+        match="Batch delete payload exceeds the maximum limit of 1,000 total items",
+    ):
+        manager.batch_delete_questions(set_id=1, ids=oversized_ids)
 
 
 # ---------------------------------------------------------------------------
