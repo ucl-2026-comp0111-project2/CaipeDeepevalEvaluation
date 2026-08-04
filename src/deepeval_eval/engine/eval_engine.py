@@ -101,11 +101,21 @@ def run_evaluation(
     dataset_name = config.dataset_name
 
     if data_loader is None:
-        data_loader = FileDataLoader(
-            questions_file=config.questions_file,
-            dataset_name=dataset_name,
-            data_dir=config.data_dir,
-        )
+        if config.question_set_id is not None:
+            from deepeval_eval.datasets.loader import QuestionSetDataLoader
+            from deepeval_eval.db.db_manager import DatabaseManager
+
+            db_mgr = DatabaseManager(config.db)
+            data_loader = QuestionSetDataLoader(
+                question_set_id=config.question_set_id,
+                db_manager=db_mgr,
+            )
+        else:
+            data_loader = FileDataLoader(
+                questions_file=config.questions_file,
+                dataset_name=dataset_name,
+                data_dir=config.data_dir,
+            )
 
     combine_with_level = (
         config.combine_with_level

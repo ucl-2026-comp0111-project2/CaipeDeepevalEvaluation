@@ -54,6 +54,12 @@ def _add_eval_args(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--questions-file", type=Path, default=None)
     parser.add_argument(
+        "--question-set-id",
+        type=int,
+        default=None,
+        help="Question Set ID to load evaluation questions from Question Manager",
+    )
+    parser.add_argument(
         "--prompt-style",
         default=None,
         help="Prompt style for answer generation (e.g. 'generation', 'short', or custom style name)",
@@ -159,6 +165,7 @@ def _run_eval(args: argparse.Namespace) -> None:
         datasource_id=getattr(args, "datasource_id", None),
         data_dir=getattr(args, "data_dir", DEFAULT_DATA_DIR),
         questions_file=getattr(args, "questions_file", None),
+        question_set_id=getattr(args, "question_set_id", None),
         prompt_style=getattr(args, "prompt_style", None),
         prompt_config=getattr(args, "prompt_config", None),
         max_items=getattr(args, "max_items", None),
