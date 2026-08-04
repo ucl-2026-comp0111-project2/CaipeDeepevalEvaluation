@@ -207,6 +207,32 @@ def test_question_db_manager_batch_delete_oversized_payload_raises_value_error()
         manager.batch_delete_questions(set_id=1, ids=oversized_ids)
 
 
+def test_list_question_sets_escapes_like_wildcards():
+    """Verify list_question_sets escapes LIKE wildcards % and _ in query."""
+    mock_base_db = MagicMock(spec=DatabaseManager)
+    mock_conn = MagicMock()
+    mock_cur = MagicMock()
+    mock_cur.fetchone.return_value = (0,)
+    mock_cur.fetchall.return_value = []
+    mock_conn.cursor.return_value.__enter__.return_value = mock_cur
+    mock_base_db.get_connection.return_value = mock_conn
+
+    manager = QuestionDBManager(mock_base_db)
+    res = manager.list_question_sets(query="%admin_set%")
+    assert res["total"] == 0
+
+    executed_sqls = [call[0][0] for call in mock_cur.execute.call_args_list]
+    executed_params = [call[0][1] for call in mock_cur.execute.call_args_list]
+
+    assert any("ESCAPE" in sql for sql in executed_sqls)
+    assert any(
+        r"\%admin\_set\%" in p
+        for params in executed_params
+        for p in params
+        if isinstance(p, str)
+    )
+
+
 # ---------------------------------------------------------------------------
 # Unit Tests for EvaluationDBManager
 # ---------------------------------------------------------------------------

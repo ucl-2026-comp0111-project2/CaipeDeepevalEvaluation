@@ -11,7 +11,6 @@ services:
       - "5432:5432"
     volumes:
       - caipe_pgdata:/var/lib/postgresql/data
-      - ./schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s

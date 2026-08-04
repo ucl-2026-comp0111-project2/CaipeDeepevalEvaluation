@@ -78,11 +78,18 @@ class QuestionDBManager:
                     END;
                     $$ LANGUAGE plpgsql;
 
-                    DROP TRIGGER IF EXISTS trg_set_default_question_id ON questions;
-
-                    CREATE TRIGGER trg_set_default_question_id
-                    BEFORE INSERT ON questions
-                    FOR EACH ROW EXECUTE FUNCTION set_default_question_id();
+                    DO $$
+                    BEGIN
+                        IF NOT EXISTS (
+                            SELECT 1 FROM pg_trigger
+                            WHERE tgname = 'trg_set_default_question_id'
+                              AND tgrelid = 'questions'::regclass
+                        ) THEN
+                            CREATE TRIGGER trg_set_default_question_id
+                            BEFORE INSERT ON questions
+                            FOR EACH ROW EXECUTE FUNCTION set_default_question_id();
+                        END IF;
+                    END $$;
                     """
                 )
             conn.commit()
@@ -147,8 +154,8 @@ class QuestionDBManager:
                 where_clause = ""
                 params: list[Any] = []
                 if query and query.strip():
-                    where_clause = "WHERE qs.name ILIKE %s OR qs.description ILIKE %s"
-                    search_pat = f"%{query.strip()}%"
+                    where_clause = "WHERE qs.name ILIKE %s ESCAPE '\\' OR qs.description ILIKE %s ESCAPE '\\'"
+                    search_pat = f"%{_escape_like_wildcards(query.strip())}%"
                     params.extend([search_pat, search_pat])
 
                 # Count total matching rows
@@ -468,7 +475,12 @@ class QuestionDBManager:
                                     "updated_at": r[11].isoformat() if r[11] else None,
                                 }
                             )
-                    except Exception:
+                    except Exception as batch_exc:
+                        logger.warning(
+                            "execute_values batch insert failed, falling back to row-by-row: %s",
+                            batch_exc,
+                        )
+                        inserted_rows = []
                         use_batch = False
 
                 if not use_batch:
@@ -650,6 +662,8 @@ class QuestionDBManager:
                             "updated_at": r[11].isoformat() if r[11] else None,
                         }
                     last_id = rows[-1][0]
+        except GeneratorExit:
+            pass
         except Exception:
             if conn is not None and hasattr(conn, "rollback"):
                 try:
