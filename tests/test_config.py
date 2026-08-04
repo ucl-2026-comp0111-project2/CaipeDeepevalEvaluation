@@ -127,3 +127,32 @@ def test_resolve_llm_settings_legacy_bridge(monkeypatch: pytest.MonkeyPatch) -> 
     assert url == "http://localhost:8000"
     assert key == "testkey"
     assert model == "testmodel"
+
+
+def test_eval_config_question_set_id_validators(tmp_path: Path):
+    from pydantic import ValidationError
+
+    from deepeval_eval.core.config import EvalConfig
+
+    q_file = tmp_path / "questions.jsonl"
+    q_file.write_text("{}\n", encoding="utf-8")
+    with pytest.raises(
+        ValidationError, match="Specify either --questions-file or --question-set-id"
+    ):
+        EvalConfig(questions_file=q_file, question_set_id=1)
+
+    with pytest.raises(
+        ValidationError, match="--question-set-id requires a database connection"
+    ):
+        EvalConfig(
+            questions_file=None,
+            question_set_id=1,
+            db={"postgres_host": None, "connection_string": None},
+        )
+
+    cfg = EvalConfig(
+        questions_file=None,
+        question_set_id=1,
+        db={"postgres_host": "localhost"},
+    )
+    assert cfg.question_set_id == 1

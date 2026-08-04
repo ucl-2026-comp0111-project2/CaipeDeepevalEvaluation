@@ -265,6 +265,7 @@ class EvalConfig(BaseSettings):
     results_dir: Path = DEFAULT_RESULTS_DIR
     gate_config: Path = DEFAULT_GATE_CONFIG
     questions_file: Path | None = None
+    question_set_id: int | None = None
     prompt_style: str | None = "generation"
     prompt_config: Path | None = Field(
         default=None,
@@ -300,6 +301,24 @@ class EvalConfig(BaseSettings):
     question_indices: str | None = None
     batch_id: str | None = None
     run_id: str | None = None
+
+    @model_validator(mode="after")
+    def _validate_question_set_source(self) -> Self:
+        if self.questions_file is not None and self.question_set_id is not None:
+            raise ValueError(
+                "Specify either --questions-file or --question-set-id, not both."
+            )
+        if self.question_set_id is not None:
+            db = self.db
+            has_dsn = db.connection_string is not None
+            has_host = db.postgres_host is not None and db.postgres_host.strip() != ""
+            if not has_dsn and not has_host:
+                raise ValueError(
+                    "--question-set-id requires a database connection. "
+                    "Set POSTGRES_HOST (or DATABASE_URL / POSTGRES_DSN) and related "
+                    "env vars before running."
+                )
+        return self
 
     @model_validator(mode="before")
     @classmethod
