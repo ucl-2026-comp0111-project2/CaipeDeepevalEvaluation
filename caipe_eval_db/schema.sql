@@ -44,3 +44,49 @@ CREATE TABLE IF NOT EXISTS run_summary (
 CREATE INDEX IF NOT EXISTS idx_runs_batch_id      ON runs(batch_id);
 CREATE INDEX IF NOT EXISTS idx_runs_config_name   ON runs(config_name);
 CREATE INDEX IF NOT EXISTS idx_results_run_id     ON eval_results(run_id);
+
+-- Question sets and evaluation questions schema
+CREATE TABLE IF NOT EXISTS question_sets (
+    id            BIGSERIAL PRIMARY KEY,
+    name          TEXT NOT NULL,
+    description   TEXT,
+    source_format TEXT,
+    created_at    TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+    updated_at    TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS questions (
+    id               BIGSERIAL PRIMARY KEY,
+    question_set_id  BIGINT NOT NULL REFERENCES question_sets(id) ON DELETE CASCADE,
+    question_id      TEXT,
+    input            TEXT NOT NULL,
+    expected_output  TEXT,
+    category         TEXT,
+    level            TEXT,
+    expected_doc_ids TEXT[] NOT NULL DEFAULT '{}'::text[],
+    context          JSONB,
+    extra            JSONB,
+    created_at       TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+    updated_at       TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+    CONSTRAINT questions_question_set_id_question_id_key UNIQUE (question_set_id, question_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_question_sets_name ON question_sets (name);
+CREATE INDEX IF NOT EXISTS idx_questions_set_category ON questions (question_set_id, category);
+CREATE INDEX IF NOT EXISTS idx_questions_set_id ON questions (question_set_id, id);
+
+CREATE OR REPLACE FUNCTION set_default_question_id()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.question_id IS NULL OR TRIM(NEW.question_id) = '' THEN
+        NEW.question_id := NEW.id::text;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_set_default_question_id ON questions;
+
+CREATE TRIGGER trg_set_default_question_id
+BEFORE INSERT ON questions
+FOR EACH ROW EXECUTE FUNCTION set_default_question_id();

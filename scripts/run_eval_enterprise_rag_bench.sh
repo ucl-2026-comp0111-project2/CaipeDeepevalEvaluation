@@ -30,7 +30,6 @@ uv run python3 src/deepeval_eval/engine/deepeval_evaluator.py \
   --dataset-name enterprise \
   --datasource-id "${CAIPE_DATASOURCE_ID}" \
   --questions-file "${QUESTIONS_PATH}" \
-  --agentic \
   --supervisor-url "${CAIPE_SUPERVISOR_URL:-http://localhost:8000}" \
   --max-items 1 \
   --top-k 5 \
