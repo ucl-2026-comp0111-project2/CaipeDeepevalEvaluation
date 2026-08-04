@@ -8,6 +8,7 @@ from deepeval_eval.datasets.loader import (
     DatabaseDataLoader,
     FileDataLoader,
     InMemoryDataLoader,
+    QuestionSetDataLoader,
     resolve_questions_file,
 )
 
@@ -70,10 +71,20 @@ def test_file_data_loader_json(tmp_path: Path):
     assert rows[0]["user_input"] == "q1"
 
 
-def test_database_data_loader_requires_connection_string():
-    loader = DatabaseDataLoader()
-    with pytest.raises(ValueError, match="connection_string is required"):
+def test_database_data_loader_base():
+    loader = DatabaseDataLoader(db_manager="mock_mgr", batch_size=500)
+    assert loader.db_manager == "mock_mgr"
+    assert loader.batch_size == 500
+    with pytest.raises(NotImplementedError, match="Subclasses of DatabaseDataLoader"):
         loader.load()
+
+
+def test_question_set_data_loader_inherits_database_data_loader():
+    loader = QuestionSetDataLoader(question_set_id=1, db_manager="mock_mgr")
+    assert isinstance(loader, DatabaseDataLoader)
+    assert loader.question_set_id == 1
+    assert loader.db_manager == "mock_mgr"
+    assert loader.batch_size == 1000
 
 
 def test_resolve_questions_file_explicit_nonexistent(tmp_path: Path):
@@ -87,17 +98,19 @@ def test_resolve_questions_file_explicit_nonexistent(tmp_path: Path):
 def test_file_data_loader_csv_and_limits(tmp_path: Path):
     csv_file = tmp_path / "questions.csv"
     csv_file.write_text(
-        "question_id,category,level,user_input\n"
-        "q1,catA,L1,What is Python?\n"
-        "q2,catA,L1,What is UV?\n"
-        "q3,catA,L2,What is pytest?\n"
-        "q4,catB,L1,What is Docker?\n",
+        "question_id,category,level,user_input,expected_doc_ids\n"
+        "q1,catA,L1,What is Python?,\"['doc1', 'doc2']\"\n"
+        "q2,catA,L1,What is UV?,doc3\n"
+        "q3,catA,L2,What is pytest?,\n"
+        "q4,catB,L1,What is Docker?,doc4\n",
         encoding="utf-8",
     )
 
     loader = FileDataLoader(questions_file=csv_file)
     rows = loader.load(limit_per_category=1, combine_with_level=True)
     assert len(rows) == 3  # (catA, L1), (catA, L2), (catB, L1)
+    assert rows[0]["expected_doc_ids"] == ["doc1", "doc2"]
+    assert isinstance(rows[0]["expected_doc_ids"], list)
 
     rows_limited = loader.load(max_items=2)
     assert len(rows_limited) == 2
@@ -124,3 +137,42 @@ def test_file_data_loader_jsonl_limits(tmp_path: Path):
     loader = FileDataLoader(questions_file=jsonl_file)
     rows = loader.load(limit_per_category=1, combine_with_level=False)
     assert len(rows) == 1
+
+
+def test_question_set_data_loader(monkeypatch):
+    from unittest.mock import MagicMock
+
+    from deepeval_eval.datasets.loader import QuestionSetDataLoader
+
+    mock_qdb = MagicMock()
+    mock_qdb.stream_questions.return_value = [
+        {
+            "input": "What is Python?",
+            "expected_output": "A programming language.",
+            "category": "coding",
+            "level": "basic",
+            "expected_doc_ids": ["doc1"],
+            "question_id": "q100",
+        },
+        {
+            "input": "What is RAG?",
+            "expected_output": "Retrieval Augmented Generation.",
+            "category": "ai",
+            "level": "intermediate",
+            "expected_doc_ids": ["doc2"],
+            "question_id": "q101",
+        },
+    ]
+
+    with monkeypatch.context() as m:
+        m.setattr(
+            "deepeval_eval.db.question_db_manager.QuestionDBManager",
+            lambda db_mgr: mock_qdb,
+        )
+        loader = QuestionSetDataLoader(question_set_id=1, db_manager=MagicMock())
+        rows = loader.load(max_items=1)
+        assert len(rows) == 1
+        assert rows[0]["input"] == "What is Python?"
+        assert rows[0]["expected_output"] == "A programming language."
+        assert rows[0]["category"] == "coding"
+        assert rows[0]["question_id"] == "q100"

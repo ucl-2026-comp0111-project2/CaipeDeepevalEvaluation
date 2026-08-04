@@ -22,12 +22,15 @@ def resolve_questions_file(
             f"Specified questions file does not exist: {questions_file}"
         )
 
+    import re
+
+    safe_name = re.sub(r"[^\w\.-]", "_", dataset_name)
     candidates = [
-        data_dir / f"{dataset_name}_deepeval_questions.jsonl",
-        data_dir / f"{dataset_name}_questions.jsonl",
-        data_dir / f"{dataset_name}.jsonl",
-        data_dir / f"{dataset_name}_deepeval_questions.csv",
-        data_dir / f"{dataset_name}_questions.csv",
+        data_dir / f"{safe_name}_deepeval_questions.jsonl",
+        data_dir / f"{safe_name}_questions.jsonl",
+        data_dir / f"{safe_name}.jsonl",
+        data_dir / f"{safe_name}_deepeval_questions.csv",
+        data_dir / f"{safe_name}_questions.csv",
     ]
 
     for candidate in candidates:
@@ -129,7 +132,27 @@ class FileDataLoader(BaseDataLoader):
                         if count >= limit_per_category:
                             continue
                         category_counts[key] = count + 1
-                    rows.append(dict(item))
+
+                    row_dict = dict(item)
+                    if "expected_doc_ids" in row_dict and isinstance(
+                        row_dict["expected_doc_ids"], str
+                    ):
+                        raw_ids = row_dict["expected_doc_ids"].strip()
+                        if raw_ids:
+                            try:
+                                row_dict["expected_doc_ids"] = json.loads(
+                                    raw_ids.replace("'", '"')
+                                )
+                            except Exception:
+                                row_dict["expected_doc_ids"] = [
+                                    d.strip()
+                                    for d in raw_ids.strip("[]").split(",")
+                                    if d.strip()
+                                ]
+                        else:
+                            row_dict["expected_doc_ids"] = []
+
+                    rows.append(row_dict)
                     if max_items and len(rows) >= max_items:
                         break
         else:
@@ -170,15 +193,11 @@ class InMemoryDataLoader(BaseDataLoader):
 
 
 class DatabaseDataLoader(BaseDataLoader):
-    """Data loader that fetches evaluation questions from a database (e.g. PostgreSQL or MongoDB)."""
+    """Base class for database-backed data loaders."""
 
-    def __init__(
-        self,
-        connection_string: str | None = None,
-        table_or_collection: str = "eval_questions",
-    ) -> None:
-        self.connection_string = connection_string
-        self.table_or_collection = table_or_collection
+    def __init__(self, db_manager: Any, batch_size: int = 1000) -> None:
+        self.db_manager = db_manager
+        self.batch_size = batch_size
 
     def load(
         self,
@@ -186,8 +205,55 @@ class DatabaseDataLoader(BaseDataLoader):
         limit_per_category: int | None = None,
         combine_with_level: bool = False,
     ) -> list[dict[str, Any]]:
-        if not self.connection_string:
-            raise ValueError("connection_string is required for DatabaseDataLoader")
         raise NotImplementedError(
-            "DatabaseDataLoader query execution requires active DB connection."
+            "Subclasses of DatabaseDataLoader must implement load()."
         )
+
+
+class QuestionSetDataLoader(DatabaseDataLoader):
+    """Loads evaluation questions from PostgreSQL Question Sets by set ID."""
+
+    def __init__(
+        self,
+        question_set_id: int,
+        db_manager: Any,
+        batch_size: int = 1000,
+    ) -> None:
+        super().__init__(db_manager=db_manager, batch_size=batch_size)
+        self.question_set_id = question_set_id
+
+    def load(
+        self,
+        max_items: int | None = None,
+        limit_per_category: int | None = None,
+        combine_with_level: bool = False,
+    ) -> list[dict[str, Any]]:
+        from deepeval_eval.db.question_db_manager import QuestionDBManager
+
+        qdb = QuestionDBManager(self.db_manager)
+        rows: list[dict[str, Any]] = []
+        category_counts: dict[Any, int] = {}
+
+        for item in qdb.stream_questions(
+            self.question_set_id, batch_size=self.batch_size
+        ):
+            mapped = {
+                "input": item["input"],
+                "expected_output": item.get("expected_output") or "",
+                "category": item.get("category") or "basic",
+                "level": item.get("level"),
+                "expected_doc_ids": item.get("expected_doc_ids") or [],
+                "context": item.get("context"),
+                "question_id": item.get("question_id"),
+            }
+            cat = mapped["category"]
+            if limit_per_category is not None:
+                key = (cat, mapped["level"]) if combine_with_level else cat
+                count = category_counts.get(key, 0)
+                if count >= limit_per_category:
+                    continue
+                category_counts[key] = count + 1
+            rows.append(mapped)
+            if max_items and len(rows) >= max_items:
+                break
+        return rows

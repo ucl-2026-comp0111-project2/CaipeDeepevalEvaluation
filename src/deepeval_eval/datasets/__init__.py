@@ -5,6 +5,7 @@ from deepeval_eval.datasets.loader import (
     DatabaseDataLoader,
     FileDataLoader,
     InMemoryDataLoader,
+    QuestionSetDataLoader,
 )
 
 __all__ = [
@@ -12,4 +13,5 @@ __all__ = [
     "DatabaseDataLoader",
     "FileDataLoader",
     "InMemoryDataLoader",
+    "QuestionSetDataLoader",
 ]
