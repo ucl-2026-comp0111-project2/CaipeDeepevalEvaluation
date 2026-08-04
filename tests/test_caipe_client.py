@@ -126,10 +126,41 @@ def test_caipe_rag_client_query_raw_positive() -> None:
         assert res[0]["score"] == 0.9
 
 
+def test_caipe_rag_client_query_raw_metadata_filters() -> None:
+    client = CaipeRagClient(base_url="https://caipe.homelab/api", token="static_token")
+    mock_resp = MagicMock()
+    mock_resp.ok = True
+    mock_resp.json.return_value = []
+
+    with patch.object(client.session, "post", return_value=mock_resp) as mock_post:
+        client.query_raw(
+            "query text",
+            datasource_id="ds1",
+            limit=3,
+            metadata_filters={"metadata.source_type": "pdf"},
+        )
+        assert mock_post.called
+        payload = mock_post.call_args[1]["json"]
+        assert payload["filters"] == {
+            "datasource_id": "ds1",
+            "metadata.source_type": "pdf",
+        }
+
+
 def test_caipe_rag_client_query_positive() -> None:
     client = CaipeRagClient(base_url="https://caipe.homelab/api", token="static_token")
     mock_llm = MagicMock()
-    mock_llm.generate.return_value = "Generated answer"
+    mock_llm.input_tokens = 0
+    mock_llm.output_tokens = 0
+    mock_llm.total_tokens = 0
+
+    def mock_generate(prompt: str) -> str:
+        mock_llm.input_tokens += 50
+        mock_llm.output_tokens += 20
+        mock_llm.total_tokens += 70
+        return "Generated answer"
+
+    mock_llm.generate.side_effect = mock_generate
 
     raw_results = [
         {
@@ -145,6 +176,9 @@ def test_caipe_rag_client_query_positive() -> None:
         assert res.answer == "Generated answer"
         assert res.contexts == ["Context info"]
         assert res.retrieved_doc_ids == ["doc1"]
+        assert res.input_tokens == 50
+        assert res.output_tokens == 20
+        assert res.total_tokens == 70
 
 
 def test_caipe_rag_client_query_negative() -> None:

@@ -233,6 +233,62 @@ def _dedupe_and_merge_contexts(items: list) -> list:
     return result
 
 
+def _extract_usage_from_response(raw_resp: Any) -> dict[str, int]:
+    """Extract token usage metadata from gateway or supervisor response dictionary.
+
+    Walks result.metadata -> resp.metadata -> artifacts[].metadata.
+    """
+    input_tokens = 0
+    output_tokens = 0
+    total_tokens = 0
+
+    if isinstance(raw_resp, dict):
+        result_obj = raw_resp.get("result") or {}
+        result_meta = (
+            result_obj.get("metadata") if isinstance(result_obj, dict) else None
+        )
+        resp_meta = raw_resp.get("metadata")
+
+        usage_meta = None
+        if isinstance(result_meta, dict):
+            usage_meta = result_meta.get("usage_metadata") or result_meta.get("usage")
+        if not usage_meta and isinstance(resp_meta, dict):
+            usage_meta = resp_meta.get("usage_metadata") or resp_meta.get("usage")
+
+        if not usage_meta and isinstance(result_obj, dict):
+            for art in result_obj.get("artifacts", []):
+                if isinstance(art, dict) and isinstance(art.get("metadata"), dict):
+                    usage_meta = art["metadata"].get("usage_metadata") or art[
+                        "metadata"
+                    ].get("usage")
+                    if usage_meta:
+                        break
+        if isinstance(usage_meta, dict):
+            input_tokens = (
+                usage_meta.get("input_tokens")
+                or usage_meta.get("prompt_tokens")
+                or usage_meta.get("input_token_count")
+                or 0
+            )
+            output_tokens = (
+                usage_meta.get("output_tokens")
+                or usage_meta.get("completion_tokens")
+                or usage_meta.get("output_token_count")
+                or 0
+            )
+            total_tokens = (
+                usage_meta.get("total_tokens")
+                or usage_meta.get("total_token_count")
+                or (input_tokens + output_tokens)
+            )
+
+    return {
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": total_tokens,
+    }
+
+
 # ============================================================
 # Return type for DeepEval specific backward compatibility
 # ============================================================
@@ -686,51 +742,10 @@ class AgenticRetriever(BaseRetriever):
             self.get_top_k(question, k=k, run_id=run_id, datasource_id=datasource_id)
             latency_ms = (time.perf_counter() - start) * 1000
 
-            # Extract token usage from the last response if available
-            input_tokens = 0
-            output_tokens = 0
-            total_tokens = 0
-
-            raw_resp = self.last_raw_response
-            if isinstance(raw_resp, dict):
-                result_obj = raw_resp.get("result") or {}
-                result_meta = (
-                    result_obj.get("metadata") if isinstance(result_obj, dict) else None
-                )
-                resp_meta = raw_resp.get("metadata")
-
-                usage_meta = None
-                if isinstance(result_meta, dict):
-                    usage_meta = result_meta.get("usage_metadata")
-                if not usage_meta and isinstance(resp_meta, dict):
-                    usage_meta = resp_meta.get("usage_metadata")
-
-                if not usage_meta and isinstance(result_obj, dict):
-                    for art in result_obj.get("artifacts", []):
-                        if isinstance(art, dict) and isinstance(
-                            art.get("metadata"), dict
-                        ):
-                            usage_meta = art["metadata"].get("usage_metadata")
-                            if usage_meta:
-                                break
-                if isinstance(usage_meta, dict):
-                    input_tokens = (
-                        usage_meta.get("input_tokens")
-                        or usage_meta.get("prompt_tokens")
-                        or usage_meta.get("input_token_count")
-                        or 0
-                    )
-                    output_tokens = (
-                        usage_meta.get("output_tokens")
-                        or usage_meta.get("completion_tokens")
-                        or usage_meta.get("output_token_count")
-                        or 0
-                    )
-                    total_tokens = (
-                        usage_meta.get("total_tokens")
-                        or usage_meta.get("total_token_count")
-                        or (input_tokens + output_tokens)
-                    )
+            usage_dict = _extract_usage_from_response(self.last_raw_response)
+            input_tokens = usage_dict["input_tokens"]
+            output_tokens = usage_dict["output_tokens"]
+            total_tokens = usage_dict["total_tokens"]
 
             return AgenticRAGResult(
                 answer=self.last_answer,
@@ -853,52 +868,21 @@ class AgenticRAG(BaseRAG):
             retrieved_doc_ids = [doc["document_id"] for doc in retrieved_docs]
             answer = self._agentic_retriever.last_answer
 
-            usage = None
-            raw_resp = self._agentic_retriever.last_raw_response
-            if isinstance(raw_resp, dict):
-                result_obj = raw_resp.get("result") or {}
-                result_meta = (
-                    result_obj.get("metadata") if isinstance(result_obj, dict) else None
-                )
-                resp_meta = raw_resp.get("metadata")
-
-                usage_meta = None
-                if isinstance(result_meta, dict):
-                    usage_meta = result_meta.get("usage_metadata")
-                if not usage_meta and isinstance(resp_meta, dict):
-                    usage_meta = resp_meta.get("usage_metadata")
-
-                if not usage_meta and isinstance(result_obj, dict):
-                    for art in result_obj.get("artifacts", []):
-                        if isinstance(art, dict) and isinstance(
-                            art.get("metadata"), dict
-                        ):
-                            usage_meta = art["metadata"].get("usage_metadata")
-                            if usage_meta:
-                                break
-                if isinstance(usage_meta, dict):
-                    in_tok = (
-                        usage_meta.get("input_tokens")
-                        or usage_meta.get("prompt_tokens")
-                        or usage_meta.get("input_token_count")
-                        or 0
-                    )
-                    out_tok = (
-                        usage_meta.get("output_tokens")
-                        or usage_meta.get("completion_tokens")
-                        or usage_meta.get("output_token_count")
-                        or 0
-                    )
-                    tot_tok = (
-                        usage_meta.get("total_tokens")
-                        or usage_meta.get("total_token_count")
-                        or (in_tok + out_tok)
-                    )
-                    usage = {
-                        "prompt_tokens": in_tok,
-                        "completion_tokens": out_tok,
-                        "total_tokens": tot_tok,
-                    }
+            usage_dict = _extract_usage_from_response(
+                self._agentic_retriever.last_raw_response
+            )
+            if (
+                usage_dict["input_tokens"]
+                or usage_dict["output_tokens"]
+                or usage_dict["total_tokens"]
+            ):
+                usage = {
+                    "prompt_tokens": usage_dict["input_tokens"],
+                    "completion_tokens": usage_dict["output_tokens"],
+                    "total_tokens": usage_dict["total_tokens"],
+                }
+            else:
+                usage = None
 
             if not retrieved_docs and answer:
                 logger.warning(

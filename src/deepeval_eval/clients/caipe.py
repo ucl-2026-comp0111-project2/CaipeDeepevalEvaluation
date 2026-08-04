@@ -192,13 +192,23 @@ class CaipeRagClient(BaseRagClient):
                 check_response(resp)
 
     def query_raw(
-        self, question: str, datasource_id: str | None, limit: int
+        self,
+        question: str,
+        datasource_id: str | None,
+        limit: int,
+        metadata_filters: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
         self.ensure_authenticated()
 
         payload: dict[str, Any] = {"query": question, "limit": limit}
+        filters: dict[str, Any] = {}
         if datasource_id:
-            payload["filters"] = {"datasource_id": datasource_id}
+            filters["datasource_id"] = datasource_id
+        if metadata_filters:
+            filters.update(metadata_filters)
+        if filters:
+            payload["filters"] = filters
+
         resp = check_response(
             self.session.post(f"{self.base_url}/v1/query", json=payload, timeout=120)
         )
@@ -220,18 +230,43 @@ class CaipeRagClient(BaseRagClient):
         prompt_style: str | PromptStyle | None = None,
         llm_client: Any = None,
         max_context_chars: int = 12000,
+        metadata_filters: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> RagQueryResult:
         start_time = time.time()
-        retrieved_raw = self.query_raw(question, datasource_id, top_k)
+        retrieved_raw = self.query_raw(
+            question, datasource_id, top_k, metadata_filters=metadata_filters
+        )
         contexts, sources = extract_contexts_and_sources(retrieved_raw)
         trimmed_contexts = [c[:max_context_chars] for c in contexts]
 
         if llm_client is None:
             raise ValueError("llm_client is required for answer generation")
 
+        def _safe_int(val: Any) -> int:
+            if isinstance(val, int):
+                return val
+            if isinstance(val, (float, str)):
+                try:
+                    return int(val)
+                except (ValueError, TypeError):
+                    pass
+            return 0
+
+        start_in = _safe_int(getattr(llm_client, "input_tokens", 0))
+        start_out = _safe_int(getattr(llm_client, "output_tokens", 0))
+        start_tot = _safe_int(getattr(llm_client, "total_tokens", 0))
+
         prompt = build_prompt(prompt_style, question, trimmed_contexts)
         answer = str(llm_client.generate(prompt))
+
+        end_in = _safe_int(getattr(llm_client, "input_tokens", start_in))
+        end_out = _safe_int(getattr(llm_client, "output_tokens", start_out))
+        end_tot = _safe_int(getattr(llm_client, "total_tokens", start_tot))
+
+        input_tokens = max(0, end_in - start_in)
+        output_tokens = max(0, end_out - start_out)
+        total_tokens = max(0, end_tot - start_tot)
 
         latency_sec = time.time() - start_time
         retrieved_ids = [
@@ -248,6 +283,9 @@ class CaipeRagClient(BaseRagClient):
             latency_sec=latency_sec,
             latency_ms=latency_sec * 1000.0,
             log_file=" ",
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=total_tokens,
         )
 
 

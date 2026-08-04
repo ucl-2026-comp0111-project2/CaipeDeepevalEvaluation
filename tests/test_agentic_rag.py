@@ -445,6 +445,66 @@ def test_agentic_rag_query_negative(mock_export):
         assert res["logs"] == "error_log_path.json"
 
 
+def test_extract_usage_from_response_three_paths():
+    from deepeval_eval.engine.agentic_rag import _extract_usage_from_response
+
+    # Path 1: result.metadata.usage_metadata
+    resp1 = {
+        "result": {
+            "metadata": {
+                "usage_metadata": {
+                    "input_tokens": 100,
+                    "output_tokens": 50,
+                    "total_tokens": 150,
+                }
+            }
+        }
+    }
+    assert _extract_usage_from_response(resp1) == {
+        "input_tokens": 100,
+        "output_tokens": 50,
+        "total_tokens": 150,
+    }
+
+    # Path 2: resp.metadata.usage_metadata
+    resp2 = {
+        "metadata": {
+            "usage_metadata": {
+                "prompt_tokens": 80,
+                "completion_tokens": 40,
+                "total_tokens": 120,
+            }
+        }
+    }
+    assert _extract_usage_from_response(resp2) == {
+        "input_tokens": 80,
+        "output_tokens": 40,
+        "total_tokens": 120,
+    }
+
+    # Path 3: artifacts[].metadata.usage_metadata
+    resp3 = {
+        "result": {
+            "artifacts": [
+                {
+                    "name": "step_artifact",
+                    "metadata": {
+                        "usage_metadata": {
+                            "input_token_count": 200,
+                            "output_token_count": 90,
+                        }
+                    },
+                }
+            ]
+        }
+    }
+    assert _extract_usage_from_response(resp3) == {
+        "input_tokens": 200,
+        "output_tokens": 90,
+        "total_tokens": 290,
+    }
+
+
 # ============================================================
 # 7. default_agentic_rag_client
 # ============================================================
