@@ -3,9 +3,12 @@ from __future__ import annotations
 import json
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from deepeval_eval.core.config import DEFAULT_DATA_DIR
+
+if TYPE_CHECKING:
+    from deepeval_eval.db.db_manager import DatabaseManager
 
 
 def resolve_questions_file(
@@ -204,7 +207,9 @@ class InMemoryDataLoader(BaseDataLoader):
 class DatabaseDataLoader(BaseDataLoader):
     """Base class for database-backed data loaders."""
 
-    def __init__(self, db_manager: Any, batch_size: int = 1000) -> None:
+    def __init__(
+        self, db_manager: DatabaseManager | Any, batch_size: int = 1000
+    ) -> None:
         self.db_manager = db_manager
         self.batch_size = batch_size
 
@@ -225,7 +230,7 @@ class QuestionSetDataLoader(DatabaseDataLoader):
     def __init__(
         self,
         question_set_id: int,
-        db_manager: Any,
+        db_manager: DatabaseManager | Any,
         batch_size: int = 1000,
     ) -> None:
         super().__init__(db_manager=db_manager, batch_size=batch_size)

@@ -140,6 +140,7 @@ def test_file_data_loader_jsonl_limits(tmp_path: Path):
 
 
 def test_question_set_data_loader(monkeypatch):
+    """Verify QuestionSetDataLoader streams questions from mocked QuestionDBManager."""
     from unittest.mock import MagicMock
 
     from deepeval_eval.datasets.loader import QuestionSetDataLoader
@@ -164,6 +165,7 @@ def test_question_set_data_loader(monkeypatch):
         },
     ]
 
+    # Use scoped monkeypatch context to patch QuestionDBManager strictly during load execution
     with monkeypatch.context() as m:
         m.setattr(
             "deepeval_eval.db.question_db_manager.QuestionDBManager",

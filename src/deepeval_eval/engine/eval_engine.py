@@ -102,6 +102,8 @@ def run_evaluation(
 
     if data_loader is None:
         if config.question_set_id is not None:
+            # Deferred import to avoid triggering PostgreSQL connection initialization
+            # when running standard file-based evaluations.
             from deepeval_eval.datasets.loader import QuestionSetDataLoader
             from deepeval_eval.db.db_manager import DatabaseManager
 
