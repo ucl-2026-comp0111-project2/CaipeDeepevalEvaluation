@@ -82,6 +82,8 @@ class FileDataLoader(BaseDataLoader):
         limit_per_category: int | None = None,
         combine_with_level: bool = False,
     ) -> list[dict[str, Any]]:
+        if max_items == 0:
+            return []
         path = self.resolve_file()
         rows: list[dict[str, Any]] = []
         category_counts: dict[tuple[str, str | None] | str, int] = {}
@@ -100,7 +102,7 @@ class FileDataLoader(BaseDataLoader):
                             continue
                         category_counts[key] = count + 1
                     rows.append(item)
-                    if max_items and len(rows) >= max_items:
+                    if max_items is not None and len(rows) >= max_items:
                         break
         elif path.suffix == ".json":
             with path.open("r", encoding="utf-8") as f:
@@ -117,7 +119,7 @@ class FileDataLoader(BaseDataLoader):
                             continue
                         category_counts[key] = count + 1
                     rows.append(item)
-                    if max_items and len(rows) >= max_items:
+                    if max_items is not None and len(rows) >= max_items:
                         break
         elif path.suffix == ".csv":
             import csv
@@ -139,11 +141,16 @@ class FileDataLoader(BaseDataLoader):
                     ):
                         raw_ids = row_dict["expected_doc_ids"].strip()
                         if raw_ids:
+                            import ast
+
                             try:
-                                row_dict["expected_doc_ids"] = json.loads(
-                                    raw_ids.replace("'", '"')
+                                parsed = ast.literal_eval(raw_ids)
+                                row_dict["expected_doc_ids"] = (
+                                    list(parsed)
+                                    if isinstance(parsed, (list, tuple))
+                                    else [str(parsed)]
                                 )
-                            except Exception:
+                            except (ValueError, SyntaxError):
                                 row_dict["expected_doc_ids"] = [
                                     d.strip()
                                     for d in raw_ids.strip("[]").split(",")
@@ -153,7 +160,7 @@ class FileDataLoader(BaseDataLoader):
                             row_dict["expected_doc_ids"] = []
 
                     rows.append(row_dict)
-                    if max_items and len(rows) >= max_items:
+                    if max_items is not None and len(rows) >= max_items:
                         break
         else:
             raise ValueError(
@@ -175,6 +182,8 @@ class InMemoryDataLoader(BaseDataLoader):
         limit_per_category: int | None = None,
         combine_with_level: bool = False,
     ) -> list[dict[str, Any]]:
+        if max_items == 0:
+            return []
         rows: list[dict[str, Any]] = []
         category_counts: dict[tuple[str, str | None] | str, int] = {}
 
@@ -187,7 +196,7 @@ class InMemoryDataLoader(BaseDataLoader):
                     continue
                 category_counts[key] = count + 1
             rows.append(item)
-            if max_items and len(rows) >= max_items:
+            if max_items is not None and len(rows) >= max_items:
                 break
         return rows
 
@@ -228,32 +237,37 @@ class QuestionSetDataLoader(DatabaseDataLoader):
         limit_per_category: int | None = None,
         combine_with_level: bool = False,
     ) -> list[dict[str, Any]]:
+        if max_items == 0:
+            return []
         from deepeval_eval.db.question_db_manager import QuestionDBManager
 
         qdb = QuestionDBManager(self.db_manager)
         rows: list[dict[str, Any]] = []
         category_counts: dict[Any, int] = {}
 
-        for item in qdb.stream_questions(
-            self.question_set_id, batch_size=self.batch_size
-        ):
-            mapped = {
-                "input": item["input"],
-                "expected_output": item.get("expected_output") or "",
-                "category": item.get("category") or "basic",
-                "level": item.get("level"),
-                "expected_doc_ids": item.get("expected_doc_ids") or [],
-                "context": item.get("context"),
-                "question_id": item.get("question_id"),
-            }
-            cat = mapped["category"]
-            if limit_per_category is not None:
-                key = (cat, mapped["level"]) if combine_with_level else cat
-                count = category_counts.get(key, 0)
-                if count >= limit_per_category:
-                    continue
-                category_counts[key] = count + 1
-            rows.append(mapped)
-            if max_items and len(rows) >= max_items:
-                break
+        gen = qdb.stream_questions(self.question_set_id, batch_size=self.batch_size)
+        try:
+            for item in gen:
+                mapped = {
+                    "input": item["input"],
+                    "expected_output": item.get("expected_output") or "",
+                    "category": item.get("category") or "basic",
+                    "level": item.get("level"),
+                    "expected_doc_ids": item.get("expected_doc_ids") or [],
+                    "context": item.get("context"),
+                    "question_id": item.get("question_id"),
+                }
+                cat = mapped["category"]
+                if limit_per_category is not None:
+                    key = (cat, mapped["level"]) if combine_with_level else cat
+                    count = category_counts.get(key, 0)
+                    if count >= limit_per_category:
+                        continue
+                    category_counts[key] = count + 1
+                rows.append(mapped)
+                if max_items is not None and len(rows) >= max_items:
+                    break
+        finally:
+            if hasattr(gen, "close"):
+                gen.close()
         return rows

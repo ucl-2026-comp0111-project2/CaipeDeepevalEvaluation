@@ -311,7 +311,9 @@ class EvalConfig(BaseSettings):
         if self.question_set_id is not None:
             db = self.db
             has_dsn = db.connection_string is not None
-            has_host = db.postgres_host is not None and db.postgres_host.strip() != ""
+            has_host = (
+                isinstance(db.postgres_host, str) and db.postgres_host.strip() != ""
+            )
             if not has_dsn and not has_host:
                 raise ValueError(
                     "--question-set-id requires a database connection. "

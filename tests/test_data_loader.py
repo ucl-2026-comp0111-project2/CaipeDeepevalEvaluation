@@ -176,3 +176,30 @@ def test_question_set_data_loader(monkeypatch):
         assert rows[0]["expected_output"] == "A programming language."
         assert rows[0]["category"] == "coding"
         assert rows[0]["question_id"] == "q100"
+
+
+def test_max_items_zero(tmp_path: Path):
+    """Verify passing max_items=0 returns an empty list across loaders."""
+    q_file = tmp_path / "questions.jsonl"
+    q_file.write_text('{"user_input": "q1"}\n{"user_input": "q2"}\n', encoding="utf-8")
+
+    file_loader = FileDataLoader(questions_file=q_file)
+    assert file_loader.load(max_items=0) == []
+
+    mem_loader = InMemoryDataLoader([{"user_input": "q1"}, {"user_input": "q2"}])
+    assert mem_loader.load(max_items=0) == []
+
+
+def test_file_data_loader_csv_apostrophe_doc_ids(tmp_path: Path):
+    """Verify CSV parser correctly handles doc IDs containing apostrophes via ast.literal_eval."""
+    csv_file = tmp_path / "questions_apostrophe.csv"
+    csv_file.write_text(
+        "question_id,user_input,expected_doc_ids\n"
+        "q1,Who is O'Brien?,\"['doc_O\\'Brien', 'doc2']\"\n",
+        encoding="utf-8",
+    )
+
+    loader = FileDataLoader(questions_file=csv_file)
+    rows = loader.load()
+    assert len(rows) == 1
+    assert rows[0]["expected_doc_ids"] == ["doc_O'Brien", "doc2"]
